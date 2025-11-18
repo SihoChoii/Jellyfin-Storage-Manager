@@ -10,12 +10,124 @@ JellyMover keeps a Jellyfin library balanced across a fast “hot” SSD pool an
 - Docker build (root `Dockerfile` + `docker-compose.yml`) ships a full-stack image that serves the compiled frontend alongside the backend API.
 
 ## Quickstart on TrueNAS SCALE
-1. Confirm your SCALE host can pull `ghcr.io/SihoChoii/jellymover:latest`.
+1. Confirm your SCALE host can pull `ghcr.io/sihochoii/jellymover:latest`.
 2. Create datasets for JellyMover config, JellyMover data, hot SSD media, and cold HDD media (each will mount into `/config`, `/data`, `/media/hot`, `/media/cold` respectively).
-3. In **Apps → Custom App**, use the wizard to set the image (`ghcr.io/SihoChoii/jellymover:latest`), add the standard env vars (`JM_PORT`, `JM_CONFIG_PATH`, `JM_DB_PATH`, `JM_LOG_LEVEL`, optional `JM_HOT_ROOT`/`JM_COLD_ROOT`), and add Host Path mounts pointing to your datasets.
+3. In **Apps → Custom App**, use the wizard to set the image (`ghcr.io/sihochoii/jellymover:latest`), add the standard env vars (`JM_PORT`, `JM_CONFIG_PATH`, `JM_DB_PATH`, `JM_LOG_LEVEL`, optional `JM_HOT_ROOT`/`JM_COLD_ROOT`), and add Host Path mounts pointing to your datasets.
 4. Click **Install**, wait for the app to turn **Running**, then open `http://<nas-ip>:3000/` in a browser.
 
-For detailed step-by-step instructions (including screenshots, YAML install option, and permissions), see [docs/truenas-scale.md](docs/truenas-scale.md).
+For additional background (screenshots, YAML install option, and permissions), see [docs/truenas-scale.md](docs/truenas-scale.md).
+
+## TrueNAS SCALE – Step-by-Step Setup (Install iX App)
+
+### Prerequisites
+- TrueNAS SCALE 24.10+.
+- GHCR image available: `ghcr.io/sihochoii/jellymover:latest`.
+- Datasets created for:
+  - JellyMover config: e.g. `pool/apps/jellymover-config`
+  - JellyMover data: e.g. `pool/apps/jellymover-data`
+  - Hot SSD media: e.g. `ssd_pool/media/anime`
+  - Cold HDD media: e.g. `hdd_pool/media/anime_archive`
+  (In TrueNAS they appear as `/mnt/<pool>/<dataset>`.)
+
+### Open the Install iX App → Custom App wizard
+1. In the TrueNAS web UI, go to **Apps → Discover** (or open the Apps landing page).
+2. Click **Custom App** to open the generic **Install iX App** wizard.
+3. You will see sections such as General, Image Configuration, Container Configuration, etc.—you will fill only the relevant ones below.
+
+### General section
+- **Application name**: `jellymover` (or any label you want in the Apps list).
+- **Version**: Metadata only—example `0.1.0`. This does *not* control the Docker image tag; the tag lives in the Image section.
+- **Notes**: Optional. Example: “Moves media between SSD (Hot) and HDD (Cold) pools for Jellyfin.”
+- All other fields in this section can stay at their defaults.
+
+### Image Configuration section
+**Image Configuration**
+
+| Field        | Value                                  | Notes                                           |
+|-------------|----------------------------------------|------------------------------------------------|
+| Repository  | `ghcr.io/sihochoii/jellymover`          | Must be lowercase, no tag here                 |
+| Tag         | `latest`                                | Or a specific tag like `0.1.0` if you prefer   |
+| Pull Policy | `IfNotPresent` (recommended)            | `Always` is fine if you’re actively developing |
+
+TrueNAS internally pulls `ghcr.io/sihochoii/jellymover:<Tag>`. Do not add `:latest` to the Repository field—set the tag separately.
+
+### Container Configuration section
+- **Hostname**: Optional; set `jellymover` or leave empty.
+- **Entrypoint / Command**: Leave blank. The container image already defines the correct entrypoint.
+- **Timezone**: Set to your local timezone (e.g. `America/Los_Angeles`).
+- **Environment Variables**:
+
+Add the following environment variables:
+
+| Name             | Value                        | Required | Notes                                                   |
+|------------------|------------------------------|----------|---------------------------------------------------------|
+| `JM_PORT`        | `3000`                       | Yes      | Internal port JellyMover listens on                     |
+| `JM_CONFIG_PATH` | `/config/app-config.json`    | Yes      | Path to config file inside the container                |
+| `JM_DB_PATH`     | `/data/jellymover.db`        | Yes      | SQLite DB path inside the container                     |
+| `JM_LOG_LEVEL`   | `info`                       | Yes      | Logging level (`info`, `debug`, etc.)                   |
+| `JM_HOT_ROOT`    | `/media/hot`                 | Optional | Used on first run when the config file is missing       |
+| `JM_COLD_ROOT`   | `/media/cold`                | Optional | Used on first run when the config file is missing       |
+
+`JM_HOT_ROOT` and `JM_COLD_ROOT` seed the initial config. After `/config/app-config.json` exists, JellyMover reads the saved values instead.
+
+- **Restart Policy**: `UnlessStopped` is recommended so the app restarts with the NAS.
+- **Disable Builtin Healthcheck**: Leave unchecked—use the healthcheck baked into the image.
+- **TTY / Stdin / Devices**: Leave TTY and Stdin unchecked; no Devices are required.
+
+### Security Context Configuration
+- **Privileged**: Leave unchecked.
+- **Capabilities**: Leave empty.
+- **Custom User**: Leave empty. JellyMover already runs as a non-root user inside the container, so no override is needed.
+
+### Network Configuration section
+- **Host Network**: Leave unchecked (disabled) to use a NAT’d interface.
+- **Ports**: Add a single port mapping:
+
+| Field            | Value                     | Notes                                         |
+|------------------|---------------------------|-----------------------------------------------|
+| Host IP          | `0.0.0.0` or leave blank  | Binds on all IPv4 interfaces                   |
+| Host / Node Port | e.g. `31847`              | Any free high port on your NAS                |
+| Container Port   | `3000`                    | Must match `JM_PORT`                          |
+| Protocol         | `TCP`                     |                                               |
+
+You will access JellyMover at `http://<truenas-ip>:<Host/Node Port>/`. Changing the Host/Node Port does not require changing `JM_PORT` (keep the container at 3000 and remap externally).
+
+- **Custom DNS Setup (Nameservers, Search Domains, DNS Options)**: Leave empty unless you have specific DNS needs.
+
+### Portal Configuration section
+1. Click **Add Portal** (or similar) and choose **HTTP**.
+2. **Host/IP**: Enter your NAS hostname or IP (e.g. `truenas.local` or `192.168.x.x`).
+3. **Port**: Use the same Host/Node Port from the Network section (e.g. `31847`).
+
+JellyMover exposes HTTP only. Keep the portal type as HTTP unless you front it with a reverse proxy that terminates TLS.
+
+### Storage Configuration section
+Add four **Host Path** storage entries:
+
+| Purpose        | Host Path (example)                | Container Mount Path |
+|----------------|------------------------------------|----------------------|
+| Config         | `/mnt/pool/apps/jellymover-config` | `/config`            |
+| Data           | `/mnt/pool/apps/jellymover-data`   | `/data`              |
+| Hot SSD media  | `/mnt/ssd_pool/media/anime`        | `/media/hot`         |
+| Cold HDD media | `/mnt/hdd_pool/media/anime_archive`| `/media/cold`        |
+
+Use the TrueNAS dataset browser to pick Host Paths (no need to type `/mnt/...` manually). Container mount paths *must* be exactly `/config`, `/data`, `/media/hot`, and `/media/cold`; only the host paths change. Ensure these datasets are writable by the container runtime (see [docs/truenas-scale.md](docs/truenas-scale.md) for ACL tips).
+
+### Labels & Resources sections
+- **Labels Configuration**: Optional; leave empty unless you need metadata tags.
+- **Resources Configuration**: Leaving “Enable Resource Limits” off is fine to start. Advanced users can cap CPU/RAM later to keep JellyMover lightweight.
+- **GPU Configuration**: Not required—JellyMover does not use GPU acceleration.
+
+### Deploy & test
+1. Review every section to ensure values match your pools and ports.
+2. Click **Install / Save** in the TrueNAS UI.
+3. Wait for the JellyMover app to reach **Running / Healthy**.
+4. Visit `http://<truenas-ip>:<Host/Node Port>/` in a browser.
+5. On first run JellyMover will use `JM_HOT_ROOT` / `JM_COLD_ROOT` to initialize `/config/app-config.json` and create the SQLite DB under `/data`.
+
+If the app fails to start, inspect the app logs in the TrueNAS Apps UI and verify permissions on the datasets mounted at `/config`, `/data`, `/media/hot`, and `/media/cold`.
+
+For additional background and alternative deployment options (including YAML-based installation), see [docs/truenas-scale.md](docs/truenas-scale.md).
 
 ## Repository layout
 | Path | Purpose |
@@ -143,7 +255,7 @@ docker compose up --build
 # visit http://localhost:3000/
 ```
 - The root `Dockerfile` builds the frontend (Node LTS) and the backend (Rust nightly), then combines them in a slim Debian runtime with a non-root `jellymover` user.
-- Canonical registry image (e.g., for TrueNAS SCALE deployments): `ghcr.io/SihoChoii/jellymover:latest`.
+- Canonical registry image (e.g., for TrueNAS SCALE deployments): `ghcr.io/sihochoii/jellymover:latest`.
 - `docker-compose.yml` exposes port 3000, mounts `./config` → `/config`, `./data` → `/data`, and the sample `./test-media/{hot,cold}` → `/media/{hot,cold}`.
 - Healthchecks hit `/health`, so TrueNAS SCALE or other orchestrators can monitor the container.
 - For TrueNAS SCALE installs (Custom App wizard or YAML), follow [docs/truenas-scale.md](docs/truenas-scale.md). For plain Docker hosts, run `docker compose up --build` with the root `docker-compose.yml`.
