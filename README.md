@@ -46,7 +46,7 @@ For additional background (screenshots, YAML install option, and permissions), s
 | Field        | Value                                  | Notes                                           |
 |-------------|----------------------------------------|------------------------------------------------|
 | Repository  | `ghcr.io/sihochoii/jellymover`          | Must be lowercase, no tag here                 |
-| Tag         | `latest`                                | Or a specific tag like `0.1.0` if you prefer   |
+| Tag         | `latest`                                | Or a specific tag like `v0.1.3` if you prefer   |
 | Pull Policy | `IfNotPresent` (recommended)            | `Always` is fine if you’re actively developing |
 
 TrueNAS internally pulls `ghcr.io/sihochoii/jellymover:<Tag>`. Do not add `:latest` to the Repository field—set the tag separately.
