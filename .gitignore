@@ -25,6 +25,32 @@ lerna-debug.log*
 /backend/config/
 /backend/data/
 
+# Environment secrets
+.env
+.env.*
+*.env
+*.env.*
+!.env.example
+!.env.sample
+!.env.template
+.envrc
+.direnv/
+
+# Databases outside bind mounts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Test artifacts / coverage
+coverage/
+frontend/coverage/
+.vitest/
+.vite/
+*.lcov
+*.coverage
+
 # OS files
 .DS_Store
 .DS_Store?
@@ -60,3 +86,5 @@ logs/
 .tmp/
 tmp/
 temp/
+# Helper scripts
+scripts/publish.sh

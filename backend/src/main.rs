@@ -9,7 +9,7 @@ mod system;
 
 use std::{
     env,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     path::{Path as StdPath, PathBuf},
     sync::Arc,
 };
@@ -18,7 +18,7 @@ use axum::{
     Json, Router,
     body::Body,
     extract::{Path, Query, State},
-    http::{Method, Request, StatusCode, header},
+    http::{Method, Request, StatusCode, header, HeaderValue},
     response::{Html, IntoResponse},
     routing::{get, post},
 };
@@ -31,7 +31,7 @@ use tokio::{
 };
 use tower::util::ServiceExt;
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::CorsLayer,
     services::{ServeDir, ServeFile},
 };
 use tracing::{error, info, warn};
@@ -196,6 +196,68 @@ struct ScanTriggerResponse {
     status: &'static str,
 }
 
+/// Validates if an origin is allowed for CORS.
+/// For TrueNAS SCALE deployments, allows:
+/// - localhost/127.0.0.1 (development)
+/// - Private IP addresses (10.x.x.x, 172.16-31.x.x, 192.168.x.x)
+/// Rejects public IPs and external domains for security.
+fn is_origin_allowed(origin: &HeaderValue) -> bool {
+    let origin_str = match origin.to_str() {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    // Parse the origin URL
+    let url = match url::Url::parse(origin_str) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+
+    // Get the host from the URL
+    let host = match url.host_str() {
+        Some(h) => h,
+        None => return false,
+    };
+
+    // Allow localhost
+    if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+        return true;
+    }
+
+    // Try to parse as IP address
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return is_private_ip(&ip);
+    }
+
+    // For hostnames, we could do DNS resolution, but for simplicity
+    // and to avoid blocking calls, we'll reject non-IP hostnames
+    // unless they're localhost variants
+    false
+}
+
+/// Checks if an IP address is private (RFC1918 ranges + link-local)
+fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ipv4) => {
+            let octets = ipv4.octets();
+            // 10.0.0.0/8
+            octets[0] == 10
+                // 172.16.0.0/12
+                || (octets[0] == 172 && (octets[1] >= 16 && octets[1] <= 31))
+                // 192.168.0.0/16
+                || (octets[0] == 192 && octets[1] == 168)
+                // 169.254.0.0/16 (link-local)
+                || (octets[0] == 169 && octets[1] == 254)
+        }
+        IpAddr::V6(ipv6) => {
+            // IPv6 private ranges (fc00::/7, fe80::/10)
+            let segments = ipv6.segments();
+            (segments[0] & 0xfe00) == 0xfc00  // fc00::/7 (ULA)
+                || (segments[0] & 0xffc0) == 0xfe80  // fe80::/10 (link-local)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let settings = AppSettings::from_env();
@@ -263,8 +325,12 @@ async fn main() {
     let worker_handle =
         jobs::start_worker(state.db.clone(), state.config.clone(), shutdown_rx.clone());
 
+    // CORS configuration for TrueNAS SCALE deployments
+    // Allows private IPs and localhost, rejects public origins
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(tower_http::cors::AllowOrigin::predicate(
+            |origin: &HeaderValue, _request_parts| is_origin_allowed(origin),
+        ))
         .allow_methods([
             Method::GET,
             Method::POST,

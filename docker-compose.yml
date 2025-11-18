@@ -2,6 +2,16 @@
 #   docker compose up --build
 #   Visit http://localhost:3000/ for the SPA or /health for backend status
 # /media/hot <-> ./test-media/hot, /media/cold <-> ./test-media/cold
+#
+# CORS Testing (after starting the container):
+# Test that private IPs are allowed:
+#   curl -H "Origin: http://localhost:3000" -I http://localhost:3000/api/config
+#   curl -H "Origin: http://192.168.1.50:3000" -I http://localhost:3000/api/config
+#   curl -H "Origin: http://10.0.0.100:3000" -I http://localhost:3000/api/config
+# Test that public domains are blocked (should NOT have Access-Control-Allow-Origin):
+#   curl -H "Origin: http://evil.com" -I http://localhost:3000/api/config
+#
+# Look for "Access-Control-Allow-Origin" header in successful responses
 
 services:
   jellymover-backend:
