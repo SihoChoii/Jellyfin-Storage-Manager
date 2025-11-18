@@ -1,0 +1,24 @@
+# JellyMover full-stack stack
+#   docker compose up --build
+#   Visit http://localhost:3000/ for the SPA or /health for backend status
+# /media/hot <-> ./test-media/hot, /media/cold <-> ./test-media/cold
+
+services:
+  jellymover-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jellymover-app
+    container_name: jellymover
+    ports:
+      - "3000:3000"
+    environment:
+      JM_PORT: "3000"
+      JM_CONFIG_PATH: /config/app-config.json
+      JM_DB_PATH: /data/jellymover.db
+      JM_LOG_LEVEL: info
+    volumes:
+      - ./config:/config
+      - ./data:/data
+      - ./test-media/hot:/media/hot
+      - ./test-media/cold:/media/cold

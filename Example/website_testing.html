@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>JellyMover — Fire &amp; Ice Media Orchestrator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg-main: #020014;
+      --bg-panel: rgba(5, 5, 20, 0.96);
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --accent-hot: #ff6b3d;
+      --accent-hot-soft: rgba(255, 107, 61, 0.28);
+      --accent-cold: #3dd5ff;
+      --accent-cold-soft: rgba(61, 213, 255, 0.28);
+      --accent-magenta: #ff4ced;
+      --text-main: #f7f7ff;
+      --text-soft: #9ea1c9;
+      --text-muted: #70739b;
+      --radius-xl: 1.25rem;
+      --radius-lg: 1rem;
+      --radius-md: 0.8rem;
+      --shadow-deep: 0 24px 60px rgba(0, 0, 0, 0.8);
+      --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.7);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display",
+        "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #071428 0, #020014 50%, #030014 100%);
+      color: var(--text-main);
+      overflow-x: hidden;
+    }
+
+    .bg-gradient {
+      position: fixed;
+      inset: -10%;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(61, 213, 255, 0.28), transparent 55%),
+        radial-gradient(circle at 100% 100%, rgba(255, 107, 61, 0.26), transparent 55%),
+        radial-gradient(circle at 30% 120%, rgba(255, 76, 237, 0.22), transparent 60%);
+      filter: blur(20px);
+      opacity: 0.9;
+      mix-blend-mode: screen;
+      animation: bgDrift 28s infinite alternate ease-in-out;
+      z-index: -2;
+    }
+
+    .bg-noise {
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='noStitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E");
+      opacity: 0.5;
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    @keyframes bgDrift {
+      0% {
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+      100% {
+        transform: translate3d(-12px, -18px, 0) scale(1.05);
+      }
+    }
+
+    .app-shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 1.5rem 1.75rem 2.25rem;
+      position: relative;
+    }
+
+    /* Top Bar / "Terminal Window" Header */
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-xl);
+      background: linear-gradient(
+          130deg,
+          rgba(61, 213, 255, 0.08),
+          rgba(255, 107, 61, 0.06)
+        ),
+        rgba(5, 5, 20, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow-deep);
+      backdrop-filter: blur(18px) saturate(130%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .top-bar::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        110deg,
+        transparent 0,
+        rgba(255, 255, 255, 0.13) 45%,
+        transparent 55%
+      );
+      opacity: 0;
+      transform: translateX(-40%);
+      pointer-events: none;
+      animation: shineSweep 6s infinite;
+    }
+
+    @keyframes shineSweep {
+      0%,
+      60% {
+        opacity: 0;
+        transform: translateX(-60%);
+      }
+      70% {
+        opacity: 1;
+        transform: translateX(0%);
+      }
+      100% {
+        opacity: 0;
+        transform: translateX(60%);
+      }
+    }
+
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+    }
+
+    .window-dots {
+      display: flex;
+      gap: 0.3rem;
+      padding-right: 0.3rem;
+    }
+
+    .window-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 999px;
+      background: #3a3a55;
+    }
+
+    .window-dot--red {
+      background: #ff5f57;
+    }
+
+    .window-dot--yellow {
+      background: #febc2e;
+    }
+
+    .window-dot--green {
+      background: #28c840;
+    }
+
+    .logo-block {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+
+    .logo-main {
+      font-weight: 800;
+      font-size: 1.2rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.25rem;
+    }
+
+    .logo-main span:first-child {
+      background: linear-gradient(120deg, var(--accent-cold), var(--accent-hot));
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .logo-main span:last-child {
+      color: var(--text-soft);
+      font-size: 0.85rem;
+      letter-spacing: 0.22em;
+    }
+
+    .logo-sub {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .top-nav {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+
+    .nav-btn {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 0.45rem 0.9rem;
+      background: radial-gradient(circle at top left, rgba(61, 213, 255, 0.1), transparent 60%),
+        rgba(7, 7, 24, 0.96);
+      color: var(--text-soft);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .nav-btn span.dot {
+      width: 0.4rem;
+      height: 0.4rem;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent-cold), var(--accent-hot));
+      opacity: 0.35;
+    }
+
+    .nav-btn-active {
+      background: linear-gradient(120deg, var(--accent-cold-soft), var(--accent-hot-soft)),
+        rgba(10, 15, 35, 0.98);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    .nav-btn-active span.dot {
+      opacity: 1;
+    }
+
+    .nav-btn:active {
+      transform: translateY(1px);
+    }
+
+    /* Terminal path header strip */
+
+    .terminal-header {
+      margin-top: 1rem;
+      padding: 0.55rem 0.9rem;
+      border-radius: var(--radius-lg);
+      background: linear-gradient(
+          110deg,
+          rgba(61, 213, 255, 0.12),
+          rgba(255, 107, 61, 0.12)
+        ),
+        rgba(3, 5, 20, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow-soft);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 0.78rem;
+      color: var(--text-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .terminal-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .prompt-user {
+      color: var(--accent-cold);
+    }
+
+    .prompt-host {
+      color: var(--accent-hot);
+    }
+
+    .prompt-path {
+      color: var(--text-main);
+    }
+
+    .terminal-header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .tiny-pill {
+      padding: 0.1rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      color: var(--text-muted);
+    }
+
+    /* Screens (Dashboard / Stats) */
+
+    .screen {
+      display: none;
+      margin-top: 1.1rem;
+      animation: screenIn 0.35s ease-out;
+    }
+
+    .screen-active {
+      display: block;
+    }
+
+    @keyframes screenIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Main dashboard layout */
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr);
+      gap: 1rem;
+      align-items: stretch;
+      margin-top: 0.9rem;
+    }
+
+    @media (max-width: 1100px) {
+      .main-layout {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr);
+        grid-template-rows: auto auto;
+      }
+      .queue-panel {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 800px) {
+      .main-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .pool-panel:nth-child(2) {
+        order: 2;
+      }
+      .queue-panel {
+        order: 3;
+      }
+    }
+
+    .panel-base {
+      border-radius: var(--radius-xl);
+      background: radial-gradient(circle at top left, rgba(61, 213, 255, 0.12), transparent 65%),
+        radial-gradient(circle at bottom right, rgba(255, 107, 61, 0.08), transparent 65%),
+        var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .panel-base::before {
+      content: attr(data-label);
+      position: absolute;
+      top: 0.6rem;
+      right: 0.9rem;
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: rgba(255, 255, 255, 0.26);
+    }
+
+    .panel-header {
+      padding: 0.7rem 0.9rem 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .panel-title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .pool-tag {
+      border-radius: 999px;
+      padding: 0.25rem 0.7rem;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.12), transparent 65%),
+        rgba(3, 8, 25, 0.96);
+    }
+
+    .pool-tag span.dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 999px;
+      background: var(--accent-cold);
+    }
+
+    .pool-title {
+      font-size: 0.78rem;
+      color: var(--text-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-weight: 600;
+    }
+
+    .pool-meta {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+    }
+
+    .badge-outline {
+      border-radius: 999px;
+      border: 1px dashed rgba(255, 255, 255, 0.25);
+      padding: 0.2rem 0.55rem;
+    }
+
+    .badge-outline-hot {
+      border-color: var(--accent-hot-soft);
+      color: #ffb199;
+    }
+
+    .badge-outline-cold {
+      border-color: var(--accent-cold-soft);
+      color: #a7ebff;
+    }
+
+    .panel-header-tools {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .search-input {
+      background: rgba(10, 12, 35, 0.96);
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 0.3rem 0.7rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.7rem;
+      color: var(--text-soft);
+      min-width: 0;
+    }
+
+    .search-input input {
+      border: none;
+      outline: none;
+      background: transparent;
+      color: inherit;
+      font-size: 0.7rem;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .search-input span.icon {
+      font-size: 0.9rem;
+      opacity: 0.7;
+    }
+
+    .cli-chip {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-muted);
+      padding: 0.18rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(7, 7, 28, 0.96);
+    }
+
+    /* Media lists */
+
+    .media-list {
+      padding: 0.75rem 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      max-height: calc(100vh - 260px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(159, 209, 255, 0.7) transparent;
+    }
+
+    .media-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .media-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .media-list::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, var(--accent-cold), var(--accent-hot));
+      border-radius: 999px;
+    }
+
+    .media-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 0.7rem;
+      align-items: center;
+      padding: 0.6rem 0.7rem;
+      border-radius: var(--radius-md);
+      background: rgba(10, 10, 30, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      position: relative;
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    .media-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.12), transparent 55%);
+      transition: opacity 0.2s ease-out;
+    }
+
+    .media-card:hover::after {
+      opacity: 1;
+    }
+
+    .media-card--in {
+      animation: cardIn 0.32s cubic-bezier(0.21, 0.96, 0.41, 1) forwards;
+      animation-delay: calc(var(--stagger, 0) * 40ms);
+    }
+
+    @keyframes cardIn {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .media-thumb {
+      width: 52px;
+      height: 52px;
+      border-radius: 0.8rem;
+      background: conic-gradient(
+        from 200deg,
+        rgba(61, 213, 255, 0.9),
+        rgba(255, 107, 61, 0.85),
+        rgba(255, 76, 237, 0.76),
+        rgba(61, 213, 255, 0.9)
+      );
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      color: #020014;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .media-thumb-inner {
+      position: absolute;
+      inset: 2px;
+      border-radius: inherit;
+      background: radial-gradient(circle at 0 0, rgba(0, 0, 0, 0.42), transparent 60%);
+      background-color: rgba(1, 3, 20, 0.96);
+    }
+
+    .media-thumb-label {
+      position: relative;
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .media-thumb-label span {
+      background: linear-gradient(120deg, var(--accent-cold), var(--accent-hot));
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .media-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .media-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .media-subrow {
+      display: flex;
+      gap: 0.55rem;
+      align-items: baseline;
+      font-size: 0.7rem;
+      color: var(--text-soft);
+    }
+
+    .media-size {
+      color: var(--text-muted);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+    }
+
+    .media-flags {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+
+    .flag-chip {
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .flag-chip-hot {
+      border-color: var(--accent-hot-soft);
+      color: #ffbba4;
+    }
+
+    .flag-chip-cold {
+      border-color: var(--accent-cold-soft);
+      color: #a8efff;
+    }
+
+    .transfer-btn {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-weight: 800;
+      border-radius: 999px;
+      border: none;
+      padding: 0.65rem 0.95rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      color: #02000f;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), var(--shadow-soft);
+      white-space: nowrap;
+    }
+
+    .transfer-btn span.icon {
+      font-size: 1.05rem;
+    }
+
+    .transfer-btn--to-hot {
+      background: linear-gradient(120deg, var(--accent-hot), #ffd07a);
+    }
+
+    .transfer-btn--to-cold {
+      background: linear-gradient(120deg, var(--accent-cold), #aef4ff);
+    }
+
+    .transfer-btn::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        120deg,
+        rgba(255, 255, 255, 0.25),
+        transparent,
+        rgba(255, 255, 255, 0.25)
+      );
+      opacity: 0;
+      transform: translateX(-30%);
+      transition: all 0.2s ease-out;
+      pointer-events: none;
+    }
+
+    .transfer-btn:hover::after {
+      opacity: 0.5;
+      transform: translateX(0);
+    }
+
+    .transfer-btn:active {
+      transform: translateY(1px) scale(0.99);
+      box-shadow: 0 5px 18px rgba(0, 0, 0, 0.85);
+    }
+
+    /* Queue panel */
+
+    .queue-panel {
+      position: relative;
+    }
+
+    .queue-header-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .queue-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-soft);
+      font-weight: 700;
+    }
+
+    .queue-sub {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+    }
+
+    .queue-body {
+      padding: 0.7rem 0.75rem 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+      max-height: calc(100vh - 260px);
+      overflow-y: auto;
+    }
+
+    .queue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .queue-item {
+      border-radius: 0.8rem;
+      padding: 0.4rem 0.5rem 0.45rem;
+      background: rgba(8, 10, 30, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) auto;
+      gap: 0.4rem 0.65rem;
+      align-items: center;
+      font-size: 0.7rem;
+      position: relative;
+    }
+
+    .queue-item-title {
+      font-weight: 600;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+
+    .queue-item-meta {
+      display: flex;
+      gap: 0.45rem;
+      align-items: baseline;
+      color: var(--text-muted);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+    }
+
+    .queue-direction {
+      color: #ffbf91;
+    }
+
+    .queue-status-pill {
+      justify-self: flex-end;
+      padding: 0.1rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(14, 20, 45, 0.96);
+      color: var(--text-soft);
+    }
+
+    .queue-progress-wrap {
+      grid-column: 1 / -1;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .queue-progress-fill {
+      height: 100%;
+      width: 40%;
+      background: linear-gradient(
+        90deg,
+        var(--accent-cold),
+        var(--accent-hot),
+        var(--accent-magenta)
+      );
+      background-size: 200% 100%;
+      animation: progressShift 1.4s infinite linear;
+    }
+
+    @keyframes progressShift {
+      0% {
+        background-position: 0 0;
+      }
+      100% {
+        background-position: 200% 0;
+      }
+    }
+
+    .queue-footer {
+      padding-top: 0.3rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .queue-footer-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+    }
+
+    .queue-footer-line strong {
+      color: var(--text-soft);
+    }
+
+    /* Stats mini section */
+
+    .stats-mini {
+      padding: 0.45rem 0.55rem 0.2rem;
+      border-radius: 0.9rem;
+      background: radial-gradient(circle at 0 0, rgba(61, 213, 255, 0.16), transparent 60%),
+        rgba(4, 8, 27, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 0.4rem;
+      align-items: center;
+      font-size: 0.68rem;
+      color: var(--text-soft);
+    }
+
+    .stat-label {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-size: 0.62rem;
+    }
+
+    .stat-bar {
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .stat-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(
+        90deg,
+        var(--accent-cold),
+        var(--accent-hot),
+        var(--accent-magenta)
+      );
+      transition: width 0.4s ease-out;
+      background-size: 160% 100%;
+      animation: statFlow 1.6s infinite linear;
+    }
+
+    @keyframes statFlow {
+      0% {
+        background-position: 0 0;
+      }
+      100% {
+        background-position: 160% 0;
+      }
+    }
+
+    .stat-value {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      color: var(--text-muted);
+    }
+
+    /* Stats Screen */
+
+    .stats-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr);
+      gap: 1rem;
+      margin-top: 0.9rem;
+    }
+
+    @media (max-width: 960px) {
+      .stats-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .stats-card {
+      border-radius: var(--radius-xl);
+      background: radial-gradient(circle at 0 0, rgba(61, 213, 255, 0.13), transparent 65%),
+        radial-gradient(circle at 100% 100%, rgba(255, 107, 61, 0.11), transparent 60%),
+        var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      padding: 0.85rem 0.9rem 0.95rem;
+      box-shadow: var(--shadow-soft);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stats-card-title {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-soft);
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .stats-card-title span.sub {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.12em;
+    }
+
+    .stats-queue-list {
+      margin-top: 0.4rem;
+      max-height: 260px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .sparkline {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.3rem;
+      height: 80px;
+      margin-top: 0.6rem;
+    }
+
+    .spark-bar {
+      flex: 1;
+      border-radius: 999px;
+      background: linear-gradient(180deg, var(--accent-cold), transparent);
+      opacity: 0.8;
+      transform-origin: bottom;
+      transition: transform 0.4s ease-out, opacity 0.3s ease-out;
+    }
+
+    .spark-bar:nth-child(odd) {
+      background: linear-gradient(180deg, var(--accent-hot), transparent);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.6rem;
+      margin-top: 0.5rem;
+    }
+
+    .stats-box {
+      border-radius: 0.9rem;
+      padding: 0.55rem 0.6rem;
+      background: rgba(6, 8, 30, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 0.72rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .stats-box-label {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+      font-size: 0.62rem;
+    }
+
+    .stats-box-value {
+      font-weight: 700;
+    }
+
+    .stats-box-sub {
+      color: var(--text-soft);
+      font-size: 0.68rem;
+    }
+
+    .stats-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-top: 0.5rem;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+
+    .legend-pill {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      padding: 0.18rem 0.5rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+    }
+
+    .legend-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 999px;
+      background: var(--accent-cold);
+    }
+
+    .legend-dot-hot {
+      background: var(--accent-hot);
+    }
+
+    .legend-dot-queue {
+      background: var(--accent-magenta);
+    }
+
+    /* Footer-ish line */
+
+    .footer-line {
+      margin-top: 1rem;
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 0.7rem;
+      opacity: 0.7;
+    }
+
+    .footer-line span.accent {
+      color: var(--accent-cold);
+    }
+
+    .footer-line span.accent-hot {
+      color: var(--accent-hot);
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-gradient"></div>
+  <div class="bg-noise"></div>
+
+  <div class="app-shell">
+    <header class="top-bar">
+      <div class="top-left">
+        <div class="window-dots" aria-hidden="true">
+          <span class="window-dot window-dot--red"></span>
+          <span class="window-dot window-dot--yellow"></span>
+          <span class="window-dot window-dot--green"></span>
+        </div>
+        <div class="logo-block">
+          <div class="logo-main">
+            <span>JELLYMOVER</span>
+            <span>FIRE ∧ ICE</span>
+          </div>
+          <div class="logo-sub">
+            &gt; orchestrate hot / cold media pools like a CLI — but pretty.
+          </div>
+        </div>
+      </div>
+
+      <nav class="top-nav">
+        <button class="nav-btn nav-btn-active" data-screen="dashboard">
+          <span class="dot"></span>
+          DASHBOARD
+        </button>
+        <button class="nav-btn" data-screen="stats">
+          <span class="dot"></span>
+          STATS / QUEUE
+        </button>
+      </nav>
+    </header>
+
+    <div class="terminal-header">
+      <div class="terminal-header-left">
+        <span class="prompt-user">jellymover</span>
+        <span class="prompt-host">@truenas</span>
+        <span>:</span>
+        <span class="prompt-path">~/pools/&lt;cold&gt;/&lt;hot&gt;</span>
+        <span>$</span>
+        <span>./jellymover --watch --jellyfin=/media/jellyfin</span>
+      </div>
+      <div class="terminal-header-right">
+        <span class="tiny-pill">mode: <strong>dark / cli</strong></span>
+        <span class="tiny-pill">transport: <strong>ssd ↔ hdd</strong></span>
+      </div>
+    </div>
+
+    <!-- DASHBOARD SCREEN -->
+    <main class="screen screen-active" id="screen-dashboard">
+      <section class="main-layout">
+        <!-- COLD POOL PANEL -->
+        <section class="panel-base pool-panel" data-label="pool: cold">
+          <header class="panel-header">
+            <div class="panel-title-row">
+              <div class="pool-tag">
+                <span class="dot"></span>
+                COLD
+              </div>
+              <div class="pool-title">Archive / HDD Pool</div>
+            </div>
+            <div class="panel-header-tools">
+              <div class="pool-meta">
+                <span class="badge-outline badge-outline-cold">readonly-ish</span>
+                <span class="cli-chip">tail cold.log</span>
+              </div>
+            </div>
+          </header>
+          <div class="media-list" id="cold-media-list">
+            <!-- Filled by JS for visuals -->
+          </div>
+        </section>
+
+        <!-- HOT POOL PANEL -->
+        <section class="panel-base pool-panel" data-label="pool: hot">
+          <header class="panel-header">
+            <div class="panel-title-row">
+              <div class="pool-tag">
+                <span class="dot" style="background: var(--accent-hot);"></span>
+                HOT
+              </div>
+              <div class="pool-title">Now Playing / SSD Pool</div>
+            </div>
+            <div class="panel-header-tools">
+              <label class="search-input">
+                <span class="icon">⌕</span>
+                <input
+                  type="text"
+                  placeholder="filter hot media…"
+                  aria-label="Filter hot media"
+                  disabled
+                />
+              </label>
+              <span class="cli-chip">watch hot.log</span>
+            </div>
+          </header>
+          <div class="media-list" id="hot-media-list">
+            <!-- Filled by JS for visuals -->
+          </div>
+        </section>
+
+        <!-- QUEUE + SYSTEM PANEL -->
+        <aside class="panel-base queue-panel" data-label="queue / stats">
+          <header class="panel-header">
+            <div class="queue-header-main">
+              <div>
+                <div class="queue-title">Transfer Queue</div>
+                <div class="queue-sub">media flowing between HOT / COLD</div>
+              </div>
+            </div>
+            <button class="cli-chip" type="button" disabled>
+              view full stats →
+            </button>
+          </header>
+
+          <div class="queue-body">
+            <div class="queue-list" id="queue-list">
+              <!-- Filled by JS -->
+            </div>
+
+            <div class="queue-footer">
+              <div class="queue-footer-line">
+                <span>active transfers</span>
+                <span><strong id="queue-active-label">0</strong> / <span id="queue-total-label">0</span></span>
+              </div>
+              <div class="queue-footer-line">
+                <span>average throughput</span>
+                <span><strong id="queue-throughput-label">0</strong> MB/s</span>
+              </div>
+            </div>
+
+            <div class="stats-mini">
+              <div class="stat-row">
+                <div class="stat-label">cpu</div>
+                <div class="stat-bar">
+                  <div class="stat-bar-fill" data-key="cpu"></div>
+                </div>
+                <div class="stat-value" data-key-label="cpu">--%</div>
+              </div>
+              <div class="stat-row">
+                <div class="stat-label">mem</div>
+                <div class="stat-bar">
+                  <div class="stat-bar-fill" data-key="mem"></div>
+                </div>
+                <div class="stat-value" data-key-label="mem">--%</div>
+              </div>
+              <div class="stat-row">
+                <div class="stat-label">cold</div>
+                <div class="stat-bar">
+                  <div class="stat-bar-fill" data-key="cold"></div>
+                </div>
+                <div class="stat-value" data-key-label="cold">--%</div>
+              </div>
+              <div class="stat-row">
+                <div class="stat-label">hot</div>
+                <div class="stat-bar">
+                  <div class="stat-bar-fill" data-key="hot"></div>
+                </div>
+                <div class="stat-value" data-key-label="hot">--%</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <div class="footer-line">
+        <span>
+          &gt; hint: click a <span class="accent">MOVE</span> button to see queue animation
+        </span>
+        <span>
+          jellyfin integration: <span class="accent-hot">TODO</span> — wire backend / API calls here.
+        </span>
+      </div>
+    </main>
+
+    <!-- STATS / QUEUE SCREEN -->
+    <section class="screen" id="screen-stats">
+      <section class="stats-layout">
+        <!-- Left: Big charts -->
+        <section class="stats-card">
+          <div class="stats-card-title">
+            <span>Live system telemetry</span>
+            <span class="sub">fake data — hook real metrics here</span>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stats-box">
+              <div class="stats-box-label">cpu load</div>
+              <div class="stats-box-value" data-key-label="cpu">--%</div>
+              <div class="stats-box-sub">docker / jellyfin / jellymover</div>
+            </div>
+            <div class="stats-box">
+              <div class="stats-box-label">memory</div>
+              <div class="stats-box-value" data-key-label="mem">--%</div>
+              <div class="stats-box-sub">cached metadata, buffers, zfs arc</div>
+            </div>
+            <div class="stats-box">
+              <div class="stats-box-label">cold usage</div>
+              <div class="stats-box-value" data-key-label="cold">--%</div>
+              <div class="stats-box-sub">hdd archive pool / TB</div>
+            </div>
+            <div class="stats-box">
+              <div class="stats-box-label">hot usage</div>
+              <div class="stats-box-value" data-key-label="hot">--%</div>
+              <div class="stats-box-sub">ssd streaming pool / TB</div>
+            </div>
+          </div>
+
+          <div class="sparkline" id="sparkline">
+            <!-- bars generated by JS -->
+          </div>
+
+          <div class="stats-legend">
+            <span class="legend-pill">
+              <span class="legend-dot"></span> CPU
+            </span>
+            <span class="legend-pill">
+              <span class="legend-dot legend-dot-hot"></span> I/O
+            </span>
+            <span class="legend-pill">
+              <span class="legend-dot legend-dot-queue"></span> Queue depth
+            </span>
+          </div>
+        </section>
+
+        <!-- Right: Big queue view -->
+        <section class="stats-card">
+          <div class="stats-card-title">
+            <span>Transfer queue (expanded)</span>
+            <span class="sub">top 10 moves across HOT / COLD</span>
+          </div>
+
+          <div class="stats-queue-list" id="stats-queue-list">
+            <!-- Cloned queue cards from dashboard -->
+          </div>
+
+          <div class="queue-footer" style="margin-top:0.5rem;">
+            <div class="queue-footer-line">
+              <span>queue size</span>
+              <span><strong id="queue-size-big">0</strong> items</span>
+            </div>
+            <div class="queue-footer-line">
+              <span>est. drain time</span>
+              <span><strong id="queue-drain-big">--</strong> min</span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <div class="footer-line">
+        <span>
+          &gt; plug in: subscribe to <span class="accent">/metrics</span> endpoint for real graphs.
+        </span>
+        <span>
+          rendered at: <span class="accent-hot" id="render-timestamp">--:--:--</span>
+        </span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ---------------------------
+    // Fake data for visual shell
+    // ---------------------------
+
+    const coldMedia = [
+      { id: "c1", title: "Planet Earth (2006)", size: "82.4 GB", tag: "4K HDR" },
+      { id: "c2", title: "Neon Genesis Evangelion", size: "45.1 GB", tag: "BluRay Rip" },
+      { id: "c3", title: "Ghibli Collection", size: "120.9 GB", tag: "Movies" },
+      { id: "c4", title: "Breaking Bad", size: "98.7 GB", tag: "TV Series" },
+      { id: "c5", title: "Old Anime Vault", size: "310.2 GB", tag: "Archive" },
+      { id: "c6", title: "Documentaries Pack", size: "56.9 GB", tag: "Docs" }
+    ];
+
+    const hotMedia = [
+      { id: "h1", title: "Jujutsu Kaisen S2", size: "33.4 GB", tag: "On Air" },
+      { id: "h2", title: "One Piece Latest Arc", size: "77.8 GB", tag: "Weekly" },
+      { id: "h3", title: "Chainsaw Man", size: "21.5 GB", tag: "Binge" },
+      { id: "h4", title: "Mob Psycho 100", size: "18.2 GB", tag: "Rewatch" },
+      { id: "h5", title: "Cyberpunk: Edgerunners", size: "12.7 GB", tag: "Recent" }
+    ];
+
+    let transferQueue = [];
+
+    // ---------------------------
+    // Render helpers
+    // ---------------------------
+
+    function createMediaCard(item, fromPool) {
+      const card = document.createElement("article");
+      card.className = "media-card";
+
+      const isCold = fromPool === "cold";
+      const targetPool = isCold ? "hot" : "cold";
+
+      card.innerHTML = `
+        <div class="media-thumb">
+          <div class="media-thumb-inner"></div>
+          <div class="media-thumb-label"><span>${isCold ? "COLD" : "HOT"}</span></div>
+        </div>
+        <div class="media-meta">
+          <div class="media-title">${item.title}</div>
+          <div class="media-subrow">
+            <span class="media-size">${item.size}</span>
+            <div class="media-flags">
+              <span class="flag-chip ${isCold ? "flag-chip-cold" : "flag-chip-hot"}">
+                ${isCold ? "HDD pool" : "SSD pool"}
+              </span>
+              <span class="flag-chip">${item.tag}</span>
+            </div>
+          </div>
+        </div>
+        <button class="transfer-btn ${
+          targetPool === "hot" ? "transfer-btn--to-hot" : "transfer-btn--to-cold"
+        }" type="button" data-id="${item.id}" data-from="${fromPool}" data-to="${targetPool}">
+          <span class="icon">${targetPool === "hot" ? "🔥" : "❄️"}</span>
+          MOVE TO ${targetPool.toUpperCase()}
+        </button>
+      `;
+
+      const btn = card.querySelector(".transfer-btn");
+      btn.addEventListener("click", () => handleTransferClick(item, fromPool, targetPool));
+
+      return card;
+    }
+
+    function renderMediaLists() {
+      const coldList = document.getElementById("cold-media-list");
+      const hotList = document.getElementById("hot-media-list");
+      coldList.innerHTML = "";
+      hotList.innerHTML = "";
+
+      coldMedia.forEach((item, index) => {
+        const card = createMediaCard(item, "cold");
+        card.style.setProperty("--stagger", index);
+        coldList.appendChild(card);
+        requestAnimationFrame(() => card.classList.add("media-card--in"));
+      });
+
+      hotMedia.forEach((item, index) => {
+        const card = createMediaCard(item, "hot");
+        card.style.setProperty("--stagger", index);
+        hotList.appendChild(card);
+        requestAnimationFrame(() => card.classList.add("media-card--in"));
+      });
+    }
+
+    // ---------------------------
+    // Queue handling (visual only)
+    // ---------------------------
+
+    function handleTransferClick(item, from, to) {
+      const entry = {
+        id: `${item.id}-${Date.now()}`,
+        title: item.title,
+        from,
+        to,
+        progress: 5 + Math.random() * 40,
+        size: item.size
+      };
+      transferQueue.unshift(entry);
+
+      // keep it from getting too long for visuals
+      if (transferQueue.length > 15) {
+        transferQueue.pop();
+      }
+
+      renderQueue();
+      updateStatsQueueView();
+    }
+
+    function renderQueue() {
+      const queueList = document.getElementById("queue-list");
+      queueList.innerHTML = "";
+
+      transferQueue.slice(0, 6).forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "queue-item";
+        row.innerHTML = `
+          <div class="queue-item-title">${item.title}</div>
+          <div class="queue-status-pill">pending</div>
+          <div class="queue-item-meta">
+            <span>${item.size}</span>
+            <span class="queue-direction">${item.from.toUpperCase()} → ${item.to.toUpperCase()}</span>
+          </div>
+          <div class="queue-item-meta">
+            <span>id:${item.id.slice(-6)}</span>
+          </div>
+          <div class="queue-progress-wrap">
+            <div class="queue-progress-fill" style="width:${item.progress}%"></div>
+          </div>
+        `;
+        queueList.appendChild(row);
+      });
+
+      // queue footer labels
+      const active = Math.min(transferQueue.length, 3);
+      const total = transferQueue.length;
+      const avgThroughput = total ? (80 + Math.random() * 40).toFixed(1) : "0.0";
+
+      document.getElementById("queue-active-label").textContent = active;
+      document.getElementById("queue-total-label").textContent = total;
+      document.getElementById("queue-throughput-label").textContent = avgThroughput;
+    }
+
+    // ---------------------------
+    // Stats (fake) updating
+    // ---------------------------
+
+    function setStat(key, valuePercent) {
+      document
+        .querySelectorAll(`.stat-bar-fill[data-key="${key}"]`)
+        .forEach((el) => {
+          el.style.width = `${valuePercent}%`;
+        });
+
+      document
+        .querySelectorAll(`.stat-value[data-key-label="${key}"], .stats-box-value[data-key-label="${key}"]`)
+        .forEach((el) => {
+          el.textContent = `${valuePercent.toFixed(0)}%`;
+        });
+    }
+
+    function randomizeStats() {
+      const cpu = 18 + Math.random() * 65;
+      const mem = 25 + Math.random() * 55;
+      const cold = 40 + Math.random() * 45;
+      const hot = 15 + Math.random() * 70;
+
+      setStat("cpu", cpu);
+      setStat("mem", mem);
+      setStat("cold", cold);
+      setStat("hot", hot);
+
+      updateSparkline(cpu, hot, transferQueue.length);
+    }
+
+    // Sparkline
+
+    let sparkBars = [];
+
+    function initSparkline() {
+      const container = document.getElementById("sparkline");
+      if (!container) return;
+
+      for (let i = 0; i < 18; i++) {
+        const bar = document.createElement("div");
+        bar.className = "spark-bar";
+        bar.style.transform = "scaleY(0.2)";
+        container.appendChild(bar);
+        sparkBars.push(bar);
+      }
+    }
+
+    function updateSparkline(cpu, ioLike, queueDepth) {
+      if (!sparkBars.length) return;
+      const base = cpu / 100;
+      const io = ioLike / 100;
+      const queueFactor = Math.min(queueDepth / 10, 1);
+
+      sparkBars.forEach((bar, index) => {
+        const jitter = 0.3 + Math.random() * 0.7;
+        const weight = 0.4 * base + 0.3 * io + 0.3 * queueFactor;
+        const scale = Math.min(1.4, Math.max(0.18, weight * 1.3 * jitter));
+        bar.style.transform = `scaleY(${scale})`;
+        bar.style.opacity = 0.45 + scale * 0.35;
+      });
+    }
+
+    // ---------------------------
+    // Stats / queue expanded screen
+    // ---------------------------
+
+    function updateStatsQueueView() {
+      const statsQueueList = document.getElementById("stats-queue-list");
+      if (!statsQueueList) return;
+      statsQueueList.innerHTML = "";
+
+      transferQueue.slice(0, 10).forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "queue-item";
+        row.innerHTML = `
+          <div class="queue-item-title">${item.title}</div>
+          <div class="queue-status-pill">queued</div>
+          <div class="queue-item-meta">
+            <span>${item.size}</span>
+            <span class="queue-direction">${item.from.toUpperCase()} → ${item.to.toUpperCase()}</span>
+          </div>
+          <div class="queue-progress-wrap">
+            <div class="queue-progress-fill" style="width:${item.progress}%"></div>
+          </div>
+        `;
+        statsQueueList.appendChild(row);
+      });
+
+      document.getElementById("queue-size-big").textContent = transferQueue.length;
+      const estMinutes = transferQueue.length ? (transferQueue.length * 1.7).toFixed(1) : "--";
+      document.getElementById("queue-drain-big").textContent = estMinutes;
+    }
+
+    // ---------------------------
+    // Screen navigation
+    // ---------------------------
+
+    function initNavigation() {
+      const buttons = document.querySelectorAll(".nav-btn");
+      buttons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const target = btn.getAttribute("data-screen");
+          if (!target) return;
+
+          buttons.forEach((b) => b.classList.remove("nav-btn-active"));
+          btn.classList.add("nav-btn-active");
+
+          document.querySelectorAll(".screen").forEach((screen) => {
+            screen.classList.remove("screen-active");
+          });
+
+          const targetScreen = document.getElementById(`screen-${target}`);
+          if (targetScreen) {
+            targetScreen.classList.add("screen-active");
+          }
+        });
+      });
+    }
+
+    // ---------------------------
+    // Bootstrap visual shell
+    // ---------------------------
+
+    function initJellyMoverShell() {
+      renderMediaLists();
+      renderQueue();
+      initSparkline();
+      initNavigation();
+      randomizeStats();
+      setInterval(randomizeStats, 2300);
+
+      const tsEl = document.getElementById("render-timestamp");
+      if (tsEl) {
+        const now = new Date();
+        tsEl.textContent = now.toLocaleTimeString();
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", initJellyMoverShell);
+  </script>
+</body>
+</html>

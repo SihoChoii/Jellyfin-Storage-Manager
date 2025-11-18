@@ -1,0 +1,259 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<tvshow>
+  <plot>Based on a suspense sci-fi manga by Tanaka Yasuki.Upon hearing of Ushio's death, Shinpei returns to his hometown of Wakayama City on Hitogashima and reunites with his childhood friend's family. The funeral goes smoothly, but under the surface something strange is brewing on the island. What mysteries await him on this secluded summer island?Source: Manga Plus</plot>
+  <outline>Based on a suspense sci-fi manga by Tanaka Yasuki.Upon hearing of Ushio's death, Shinpei returns to his hometown of Wakayama City on Hitogashima and reunites with his childhood friend's family. The funeral goes smoothly, but under the surface something strange is brewing on the island. What mysteries await him on this secluded summer island?Source: Manga Plus</outline>
+  <lockdata>false</lockdata>
+  <dateadded>2025-03-28 14:11:42</dateadded>
+  <title>Summer Time Rendering</title>
+  <originaltitle>Summer Time Render</originaltitle>
+  <director>Yoshihisa Satou</director>
+  <director>Masatoshi Tsuji</director>
+  <director>Junpei Fukuchi</director>
+  <director>Ayumu Watanabe</director>
+  <director>Miyuki Sugawara</director>
+  <director>Hiroaki Karasu</director>
+  <director>Miki Matsumoto</director>
+  <director>Haruhito Takada</director>
+  <rating>8.4</rating>
+  <year>2022</year>
+  <premiered>2022-04-15</premiered>
+  <releasedate>2022-04-15</releasedate>
+  <enddate>2022-09-30</enddate>
+  <runtime>24</runtime>
+  <genre>Anime</genre>
+  <genre>contemporary fantasy</genre>
+  <genre>love polygon</genre>
+  <genre>thriller</genre>
+  <genre>time travel</genre>
+  <studio>OLM</studio>
+  <studio>Shueisha</studio>
+  <studio>Shogakukan-Shueisha Productions</studio>
+  <studio>MAGES.</studio>
+  <studio>Toy's Factory</studio>
+  <studio>TOKYO MX</studio>
+  <studio>Movic</studio>
+  <studio>BANDAI SPIRITS</studio>
+  <tag>Time Manipulation</tag>
+  <tag>Urban Fantasy</tag>
+  <tag>Time Loop</tag>
+  <tag>Shapeshifting</tag>
+  <tag>Reincarnation</tag>
+  <tag>Super Power</tag>
+  <tag>Primarily Teen Cast</tag>
+  <tag>Religion</tag>
+  <tag>Mythology</tag>
+  <tag>Tragedy</tag>
+  <tag>Coastal</tag>
+  <tag>Rural</tag>
+  <tag>Body Swapping</tag>
+  <tag>Alternate Universe</tag>
+  <tag>Ensemble Cast</tag>
+  <tag>Dissociative Identities</tag>
+  <tag>Cosmic Horror</tag>
+  <tag>Survival</tag>
+  <tag>Gods</tag>
+  <tag>Heterosexual</tag>
+  <tag>Male Protagonist</tag>
+  <tag>Gore</tag>
+  <tag>Amnesia</tag>
+  <tag>Shounen</tag>
+  <tag>Aliens</tag>
+  <tag>Body Horror</tag>
+  <tag>Ghost</tag>
+  <tag>Guns</tag>
+  <tag>Unrequited Love</tag>
+  <tag>Denpa</tag>
+  <tag>Tanned Skin</tag>
+  <tag>Love Triangle</tag>
+  <tag>Nudity</tag>
+  <tag>Clone</tag>
+  <tag>Age Regression</tag>
+  <anidbid>16033</anidbid>
+  <anilistid>129201</anilistid>
+  <art>
+    <poster>/config/metadata/library/ec/ecaae3991a962ff36a65025aface7181/poster.jpg</poster>
+    <fanart>/config/metadata/library/ec/ecaae3991a962ff36a65025aface7181/backdrop.jpg</fanart>
+  </art>
+  <actor>
+    <name>4C Studio</name>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Miki Matsumoto</name>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Hiroshi Seko</name>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Keiichi Okabe</name>
+    <type>Composer</type>
+  </actor>
+  <actor>
+    <name>Ryuuichi Takada</name>
+    <type>Composer</type>
+  </actor>
+  <actor>
+    <name>Yasuki Tanaka</name>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Keigo Hoashi</name>
+    <type>Composer</type>
+  </actor>
+  <actor>
+    <name>Productions Shogakukan-Shueisha</name>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Anna Nagase</name>
+    <role>Kofune Ushio</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/A/Anna Nagase/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Saho Shirasu</name>
+    <role>Kofune Mio</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/S/Saho Shirasu/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Natsuki Hanae</name>
+    <role>Ajiro Shinpei</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/N/Natsuki Hanae/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Youko Hikasa</name>
+    <role>Minakata Hizuru</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/Y/Youko Hikasa/folder.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Jin Urayama</name>
+    <role>Nezu Ginjirou</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/J/Jin Urayama/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Maki Kawase</name>
+    <role>Hishigata Tokiko</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/M/Maki Kawase/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Kenshou Ono</name>
+    <role>Hishigata Sou</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/K/Kenshou Ono/folder.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Youji Ueda</name>
+    <role>Totsumura Tetsu</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/Y/Youji Ueda/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Tesshou Genda</name>
+    <role>Kofune Alain</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/T/Tesshou Genda/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Akio Ootsuka</name>
+    <role>Hishigata Seidou</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/A/Akio Ootsuka/folder.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Katsuyuki Konishi</name>
+    <role>Karikiri Masahito</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/K/Katsuyuki Konishi/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Rie Kugimiya</name>
+    <role>Kobayakawa Shiori</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/R/Rie Kugimiya/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Misaki Kuno</name>
+    <role>Heine</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/M/Misaki Kuno/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Yuuko Sanpei</name>
+    <role>Minakata Ryuunosuke</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/Y/Yuuko Sanpei/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Arisa Sakuraba</name>
+    <role>Hishigata Chitose</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/A/Arisa Sakuraba/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Sakiko Kawai</name>
+    <role>Negoro</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Ai Yamamoto</name>
+    <role>Kobayakawa Asako</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/A/Ai Yamamoto/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Yoshihisa Hosokawa</name>
+    <role>Kobayakawa Tatsuo</role>
+    <type>Actor</type>
+    <thumb>/config/metadata/People/Y/Yoshihisa Hosokawa/folder.png</thumb>
+  </actor>
+  <actor>
+    <name>Takehiro Hasu</name>
+    <role>Nakamura</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Sachiko Honma</name>
+    <role>Shiomi</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Mana Nakatomi</name>
+    <role>Hamaji Shun</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Rika Hayashi</name>
+    <role>Hamaji Akari</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Serika Hiromatsu</name>
+    <role>Toudai Teru</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Sakiko Tanaka</name>
+    <role>Hitobuchi</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Toshiki Watanabe</name>
+    <role>Ajiro Tooru</role>
+    <type>Actor</type>
+  </actor>
+  <actor>
+    <name>Ellen Taira</name>
+    <role>Kogaito</role>
+    <type>Actor</type>
+  </actor>
+  <season>-1</season>
+  <episode>-1</episode>
+  <status>Ended</status>
+</tvshow>
