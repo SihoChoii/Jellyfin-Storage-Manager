@@ -5,9 +5,12 @@
 
 services:
   jellymover-backend:
+    # For local development:
     build:
       context: .
       dockerfile: Dockerfile
+    # For TrueNAS SCALE / registry deployments, use this image instead:
+    # image: ghcr.io/SihoChoii/jellymover:latest
     image: jellymover-app
     container_name: jellymover
     ports:

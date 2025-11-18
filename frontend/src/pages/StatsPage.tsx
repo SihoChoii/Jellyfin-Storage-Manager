@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import AppHeader from '../components/AppHeader'
 import { apiGet } from '../api'
 import useJobsPolling from '../hooks/useJobsPolling'
-import type { PoolInfo, PoolsResponse, Show } from '../types'
+import type { PoolInfo, PoolsResponse, Show, SystemStats } from '../types'
 import {
   formatBytesShort,
   formatJobDirection,
@@ -25,7 +25,6 @@ const initialStats: StatsState = {
 }
 
 const SPARK_BAR_COUNT = 18
-const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min
 
 const formatPoolSummary = (pool?: PoolInfo | null) => {
   if (!pool) return 'pool unavailable'
@@ -129,29 +128,46 @@ const StatsPage = () => {
   }, [hotUsagePercent, coldUsagePercent])
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      const baseStats = statsRef.current
-      const nextStats: StatsState = {
-        cpuPercent: randomInRange(18, 84),
-        memPercent: randomInRange(28, 82),
-        hotPercent: baseStats.hotPercent,
-        coldPercent: baseStats.coldPercent,
-      }
+    let cancelled = false
 
-      setStats(nextStats)
-      const ioSource = (hotUsagePercent ?? nextStats.hotPercent) / 100
-      setSparkline(() =>
-        Array.from({ length: SPARK_BAR_COUNT }, () => {
-          const base = nextStats.cpuPercent / 100
-          const queueFactor = Math.min(queueLengthRef.current / 10, 1)
-          const jitter = 0.3 + Math.random() * 0.7
-          const weight = 0.4 * base + 0.3 * ioSource + 0.3 * queueFactor
-          return Math.min(1.4, Math.max(0.18, weight * 1.3 * jitter))
-        }),
-      )
+    const loadSystemStats = async () => {
+      try {
+        const data = await apiGet<SystemStats>('/stats')
+        if (cancelled) return
+
+        const baseStats = statsRef.current
+        const nextStats: StatsState = {
+          cpuPercent: data.cpu_percent,
+          memPercent: data.memory_percent,
+          hotPercent: baseStats.hotPercent,
+          coldPercent: baseStats.coldPercent,
+        }
+
+        setStats(nextStats)
+        const ioSource = (hotUsagePercent ?? nextStats.hotPercent) / 100
+        setSparkline(() =>
+          Array.from({ length: SPARK_BAR_COUNT }, () => {
+            const base = nextStats.cpuPercent / 100
+            const queueFactor = Math.min(queueLengthRef.current / 10, 1)
+            const jitter = 0.3 + Math.random() * 0.7
+            const weight = 0.4 * base + 0.3 * ioSource + 0.3 * queueFactor
+            return Math.min(1.4, Math.max(0.18, weight * 1.3 * jitter))
+          }),
+        )
+      } catch (err) {
+        console.error('Failed to load system stats', err)
+      }
+    }
+
+    loadSystemStats()
+    const interval = window.setInterval(() => {
+      if (!cancelled) loadSystemStats()
     }, 2000)
 
-    return () => window.clearInterval(interval)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
   }, [hotUsagePercent])
 
   const showTitleMap = useMemo(() => {
@@ -263,8 +279,8 @@ const StatsPage = () => {
 
         <section className="stats-card">
           <div className="stats-card-title">
-            <span>System activity (simulated)</span>
-            <span className="sub">Placeholder CPU / memory visualization</span>
+            <span>System activity</span>
+            <span className="sub">Real-time CPU &amp; memory metrics</span>
           </div>
 
           <div className="stats-grid">
@@ -273,14 +289,14 @@ const StatsPage = () => {
               <div className="stats-box-value" data-key-label="cpu">
                 {Math.round(stats.cpuPercent)}%
               </div>
-              <div className="stats-box-sub">synthetic until server metrics arrive</div>
+              <div className="stats-box-sub">live server metrics</div>
             </div>
             <div className="stats-box">
               <div className="stats-box-label">memory</div>
               <div className="stats-box-value" data-key-label="mem">
                 {Math.round(stats.memPercent)}%
               </div>
-              <div className="stats-box-sub">synthetic until server metrics arrive</div>
+              <div className="stats-box-sub">live server metrics</div>
             </div>
           </div>
 
@@ -293,7 +309,7 @@ const StatsPage = () => {
               <span className="legend-dot" /> CPU
             </span>
             <span className="legend-pill">
-              <span className="legend-dot legend-dot-hot" /> I/O (simulated)
+              <span className="legend-dot legend-dot-hot" /> I/O activity
             </span>
             <span className="legend-pill">
               <span className="legend-dot legend-dot-queue" /> Queue depth
@@ -352,7 +368,7 @@ const StatsPage = () => {
       </section>
 
       <div className="footer-line">
-        <span>&gt; coming soon: real CPU / memory metrics from the server monitor endpoint.</span>
+        <span>&gt; live system metrics refreshing every 2 seconds.</span>
         <span>
           snapshot captured at <span className="accent-hot" id="render-timestamp">{renderTimestamp}</span>
         </span>

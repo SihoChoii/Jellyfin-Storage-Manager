@@ -1,28 +1,191 @@
 # JellyMover
 
-JellyMover is a tool to manage Jellyfin media between a "Hot" SSD pool and a "Cold" HDD pool on TrueNAS SCALE.
+JellyMover keeps a Jellyfin library balanced across a fast “hot” SSD pool and a larger “cold” HDD pool. A Rust backend continuously understands what lives where, a SQLite database tracks shows and move jobs, and a React/Vite frontend gives you a control surface for scans, pool insights, and one-click moves.
 
-## Project Structure
-- `backend/` – Rust binary crate (`jellymover-backend`) that will power the API and storage orchestration logic.
-- `frontend/` – React + Vite TypeScript app that will become the management UI.
+## Key features
+- Filesystem scanner understands hot/cold roots or explicit library paths, parses `tvshow.nfo`, and stores metadata (title, size, seasons, episodes, thumbnails) in SQLite.
+- Move jobs are queued, executed, and monitored through an Axum API; the worker copies files, updates the DB, deletes the source, and reports progress/ETA.
+- Jellyfin integration can trigger rescan jobs and validate API access so the media server stays in sync.
+- A SPA (React 19 + Vite + TypeScript) provides a setup wizard, dual-pane library view, stats dashboard, jobs monitor, and configuration screen.
+- Docker build (root `Dockerfile` + `docker-compose.yml`) ships a full-stack image that serves the compiled frontend alongside the backend API.
 
-## Development
+## Quickstart on TrueNAS SCALE
+1. Confirm your SCALE host can pull `ghcr.io/SihoChoii/jellymover:latest`.
+2. Create datasets for JellyMover config, JellyMover data, hot SSD media, and cold HDD media (each will mount into `/config`, `/data`, `/media/hot`, `/media/cold` respectively).
+3. In **Apps → Custom App**, use the wizard to set the image (`ghcr.io/SihoChoii/jellymover:latest`), add the standard env vars (`JM_PORT`, `JM_CONFIG_PATH`, `JM_DB_PATH`, `JM_LOG_LEVEL`, optional `JM_HOT_ROOT`/`JM_COLD_ROOT`), and add Host Path mounts pointing to your datasets.
+4. Click **Install**, wait for the app to turn **Running**, then open `http://<nas-ip>:3000/` in a browser.
 
-### Backend
-Prerequisites: Rust toolchain with Cargo installed.
+For detailed step-by-step instructions (including screenshots, YAML install option, and permissions), see [docs/truenas-scale.md](docs/truenas-scale.md).
 
-```sh
-cd backend
-cargo run
+## Repository layout
+| Path | Purpose |
+| --- | --- |
+| `backend/` | Rust crate (`jellymover-backend`) with Axum HTTP server, filesystem scanner, Jellyfin client, SQLite migrations, and job worker. Includes `backend/Dockerfile` + `DOCKER.md` for backend-only image builds. |
+| `frontend/` | React/Vite TypeScript SPA plus Vitest/Jest Testing Library setup. Run `npm run dev`, `npm run build`, `npm run test`, or `npm run lint`. |
+| `config/` | Local runtime configuration and sample `app-config.json`. Bind mounted to `/config` inside containers. |
+| `data/` | SQLite database lives here (`jellymover.db`). Bind mounted to `/data` inside containers. |
+| `Example/` | Sample `tvshow.nfo` files used by scanner unit tests. |
+| `test-media/` | Optional hot/cold folders used by `docker-compose` for quick smoke tests. |
+| `Dockerfile`, `docker-compose.yml` | Full-stack container build & orchestration. |
+
+## Architecture
 ```
-The current binary just logs a placeholder message so the crate compiles cleanly.
-
-### Frontend
-Prerequisites: Node.js 18+ and npm.
-
-```sh
-cd frontend
-npm install   # first run only
-npm run dev
+Hot /media/hot      Cold /media/cold
+        │                  │
+        └── scanner.rs (walkdir + quick-xml) ──► SQLite (shows, jobs tables)
+                                  │
+                            Axum HTTP API
+                   (config, pools, scan, jobs, Jellyfin)
+                                  │
+                    React + Vite frontend (dist/ served by Axum)
+                                  │
+                      Operators queue jobs or rescans
+                                  │
+                    Job worker copies files and updates DB
+                                  │
+                      Optional Jellyfin rescan trigger
 ```
-Vite starts a dev server (default http://localhost:5173) serving the empty React shell ready for future UI work.
+
+## Backend (Rust + Axum)
+
+### Local development
+1. Install the nightly Rust toolchain (edition 2024 requires it for now): `rustup toolchain install nightly`.
+2. Start the API (from the repo root):<br>`cargo +nightly run -p jellymover-backend`
+3. Browse `http://localhost:3000/health` to verify the service and `http://localhost:3000/api/...` for endpoints. Static assets are served from `/app/static` when present; during local dev the frontend usually runs separately via Vite.
+
+### Configuration file
+- Default path: `config/app-config.json` (inside Docker it becomes `/config/app-config.json`).
+- The server creates the file on first boot; you can also seed it with `JM_HOT_ROOT` and `JM_COLD_ROOT` (only when the file did not exist).
+- Fields:
+
+```json
+{
+  "hot_root": "/media/hot",
+  "cold_root": "/media/cold",
+  "library_paths": [],
+  "jellyfin": {
+    "url": "https://jellyfin.example.com",
+    "api_key": "PASTE_YOUR_KEY"
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `hot_root`, `cold_root` | Absolute directories that represent SSD (“hot”) and HDD (“cold”) pools. Must exist before saving. |
+| `library_paths` | Optional overrides for folders to scan. If empty, JellyMover scans both roots. |
+| `jellyfin.url`, `jellyfin.api_key` | Base URL and API key used to trigger library refreshes and validate access. Leave empty to disable integration. |
+
+### Environment variables
+| Variable | Default / Effect |
+| --- | --- |
+| `JM_PORT` | HTTP port (default `3000`). |
+| `JM_CONFIG_PATH` | Config file path (`config/app-config.json` locally, `/config/app-config.json` in Docker). |
+| `JM_DB_PATH` | SQLite file path (`data/jellymover.db` locally, `/data/jellymover.db` in Docker). |
+| `JM_LOG_LEVEL` | `tracing_subscriber` filter (default `info`). Set to `debug` for verbose logging. |
+| `JM_HOT_ROOT`, `JM_COLD_ROOT` | Optional one-time seeds for a brand-new config file. Ignored after the config exists. |
+| `JELLYMOVER_IN_DOCKER` / `RUNNING_IN_DOCKER` | Optional hints if auto-detection should treat the process as containerized. |
+
+### Database and filesystem expectations
+- `backend/src/db.rs` initializes SQLite with `shows` and `jobs` tables plus indexes for path, location, and sort columns.
+- The scanner (`scanner.rs`) walks every configured library directory, infers metadata, and upserts records. It understands `tvshow.nfo`, optional per-episode `.nfo` files, and `folder.jpg`/`poster.jpg` thumbnails.
+- Both pools must be accessible to the backend process so that jobs can copy and delete directories. When running in Docker, bind mount the host folders read/write to `/media/hot` and `/media/cold`.
+
+### Filesystem scans and job worker
+- `POST /api/scan` kicks off a background scan. Only one scan runs at a time, and scans are blocked while move jobs are active.
+- Scan status is exposed at `GET /api/scan/status`.
+- `jobs::start_worker` loops forever until shutdown, pulls the oldest queued job, and copies the show folder to the requested pool using async `tokio::fs` and `walkdir`.
+- Completed jobs update the `shows` table path + location and delete the original source directory. Failed jobs keep the error text attached for the UI.
+
+### HTTP API surface
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/health` | Returns `{status, db}` for container/orchestrator probes. |
+| `GET/PUT` | `/api/config` | Read or persist `app-config.json`. Validation ensures directories exist and hot/cold roots are distinct. |
+| `GET` | `/api/paths?root=/path` | Lists immediate subdirectories plus capacity stats; used by the settings path picker. |
+| `GET` | `/api/pools` | Returns `hot`/`cold` usage (total/used/free bytes). |
+| `POST` | `/api/scan` | Starts filesystem scan. |
+| `GET` | `/api/scan/status` | Returns `{state, last_started, last_finished, last_error}`. |
+| `POST` | `/api/jellyfin/rescan` | Triggers `Library/Refresh` via Jellyfin API. |
+| `GET` | `/api/jellyfin/status` | Checks Jellyfin health endpoint plus `Library/PhysicalPaths` to confirm connectivity/auth. |
+| `GET` | `/api/shows` | Lists shows. Supports `location`, `limit`, `offset`, `search` (`title`/`path`), and `sort_by` (`title`, `size`, `date`, `seasons`, `episodes`) with `sort_dir`. |
+| `POST` | `/api/shows/:id/move` | Queues a move job: `{ "target": "hot" | "cold" }`. Guarded so scans/missing config cannot overlap. |
+| `GET` | `/api/jobs` | Lists jobs with pagination. |
+| `GET` | `/api/jobs/:id` | Returns a single job. |
+
+Static requests fall back to `frontend/dist` (copied to `/app/static`). When the bundle is missing, a placeholder HTML page reminds you to run the frontend build.
+
+## Frontend (React + Vite)
+
+### Local development workflow
+1. Install Node.js 18+ and npm.
+2. Install dependencies: `cd frontend && npm install`.
+3. Run the dev server (point it at the backend):<br>`VITE_API_BASE=http://localhost:3000/api npm run dev` (Vite listens on `http://localhost:5173`).
+4. The SPA talks to the backend via `frontend/src/api.ts`; the `VITE_API_BASE` env variable defaults to `/api` for same-origin deployments.
+
+### Production build & tests
+- Build artifacts: `npm run build` (writes `frontend/dist/`). The docker build copies this folder into the backend image.
+- Preview build: `npm run preview`.
+- Tests: `npm run test` (Vitest + Testing Library) and `npm run lint`.
+
+### UI highlights
+- **Setup Wizard** ensures hot/cold roots + Jellyfin credentials exist before exposing the rest of the app.
+- **Library view (`JellyMoverShell`)** shows hot/cold panes, search, infinite scroll, sorting, pool stats, and one-click move buttons (which queue `/shows/:id/move` jobs).
+- **Jobs page** polls `/jobs`, merges historical pages, and surfaces totals (running/queued/success/failed) plus per-job progress + ETA using `useJobsPolling`.
+- **Stats page** merges pool usage, job throughput, and pseudo load indicators for an at-a-glance dashboard.
+- **Settings page** edits config, browses directories via `/paths`, triggers scans, and integrates Jellyfin status/rescan calls.
+
+## Docker & deployment
+
+### Full-stack container
+```
+docker compose up --build
+# visit http://localhost:3000/
+```
+- The root `Dockerfile` builds the frontend (Node LTS) and the backend (Rust nightly), then combines them in a slim Debian runtime with a non-root `jellymover` user.
+- Canonical registry image (e.g., for TrueNAS SCALE deployments): `ghcr.io/SihoChoii/jellymover:latest`.
+- `docker-compose.yml` exposes port 3000, mounts `./config` → `/config`, `./data` → `/data`, and the sample `./test-media/{hot,cold}` → `/media/{hot,cold}`.
+- Healthchecks hit `/health`, so TrueNAS SCALE or other orchestrators can monitor the container.
+- For TrueNAS SCALE installs (Custom App wizard or YAML), follow [docs/truenas-scale.md](docs/truenas-scale.md). For plain Docker hosts, run `docker compose up --build` with the root `docker-compose.yml`.
+
+### Backend-only image
+If you only need the API, build `backend/Dockerfile`:
+```
+docker build -t jellymover-backend ./backend
+docker run --rm -p 3000:3000 \
+  -v "$(pwd)/config:/config" \
+  -v "$(pwd)/data:/data" \
+  jellymover-backend
+```
+Copy a built frontend bundle into `/app/static` if you still want to serve the SPA from the backend container.
+
+### Volume layout / persistence
+| Host Path | Container Path | Contents |
+| --- | --- | --- |
+| `config/` | `/config` | `app-config.json` (hot/cold roots, Jellyfin secrets). |
+| `data/` | `/data` | `jellymover.db` SQLite database. |
+| `test-media/hot` | `/media/hot` | Optional sample SSD pool. Replace with your actual dataset in production. |
+| `test-media/cold` | `/media/cold` | Optional sample HDD pool. |
+
+Ensure the host directories are writable by UID/GID `1000` (default user inside the container) or adjust the docker compose file accordingly.
+
+## Data and sample content
+- `config/app-config.json` in the repo includes example values—replace them with your own secrets before running against a real Jellyfin server.
+- `data/jellymover.db` is safe to delete between runs; the backend recreates the schema automatically.
+- `test-media/` is purely for local experimentation and can be replaced with bind mounts to your actual pools.
+- `Example/` contains fixtures that keep scanner unit tests deterministic.
+
+## Testing & quality gates
+- Backend unit tests: `cargo +nightly test -p jellymover-backend`
+- Lint/analyze (optional): `cargo +nightly fmt -- --check` and `cargo +nightly clippy -p jellymover-backend`
+- Frontend tests: `cd frontend && npm run test`
+- Frontend lint: `cd frontend && npm run lint`
+- Before shipping container updates, run `npm run build` so Docker can copy the latest bundle, then `docker compose up --build` to validate end-to-end.
+
+## Troubleshooting & tips
+- **Configuration won’t save** – the backend validates that hot/cold directories already exist and are not nested; create the folders first or point at the mounted pool path.
+- **Vite can’t reach the API** – set `VITE_API_BASE=http://localhost:3000/api` (or your remote URL) before `npm run dev`.
+- **Jobs stay queued** – ensure no scan is running (`GET /api/scan/status`) and check backend logs for filesystem permission errors on `/media/{hot,cold}`.
+- **Jellyfin errors** – use the settings page or `GET /api/jellyfin/status` to inspect HTTP status codes; most issues stem from incorrect base URLs or API keys.
+
+You now have a single README that documents the backend, frontend, Docker workflows, and operational expectations for JellyMover.

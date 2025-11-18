@@ -45,9 +45,9 @@ pub fn collect_pool_usage(root: &str) -> Option<PoolSummary> {
         }
     };
 
-    let block_size = u64::from(stats.fragment_size()).max(1);
+    let block_size = u64::from(stats.block_size()).max(1);
     let total_blocks = stats.blocks() as u64;
-    let free_blocks = stats.blocks_available() as u64;
+    let free_blocks = stats.blocks_free() as u64;
     let total = total_blocks.saturating_mul(block_size);
     let free = free_blocks.saturating_mul(block_size);
     let used = total.saturating_sub(free);

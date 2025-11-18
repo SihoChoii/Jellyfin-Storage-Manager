@@ -100,9 +100,9 @@ pub fn list_subdirectories(root: &Path) -> Result<Vec<DirectoryEntry>, PathsErro
         if metadata.is_dir() {
             let path = entry.path();
             let stats = statvfs(&path).map_err(|err| PathsError::Stat(path.clone(), err))?;
-            let block_size = u64::from(stats.fragment_size()).max(1);
+            let block_size = u64::from(stats.block_size()).max(1);
             let total_blocks = u64::from(stats.blocks());
-            let free_blocks = u64::from(stats.blocks_available());
+            let free_blocks = u64::from(stats.blocks_free());
 
             let total = total_blocks.saturating_mul(block_size);
             let free = free_blocks.saturating_mul(block_size);

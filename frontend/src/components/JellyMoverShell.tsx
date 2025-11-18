@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../api'
-import type { PoolsResponse, Show, SortDirection, SortField } from '../types'
+import type { PoolsResponse, Show, SortDirection, SortField, SystemStats } from '../types'
 import type { Job } from '../types'
 import AppHeader from './AppHeader'
 import {
@@ -35,7 +35,6 @@ const initialStats: StatsState = {
 }
 
 const SHOWS_PAGE_SIZE = 50
-const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min
 
 interface ShowPaginationState {
   offset: number
@@ -300,16 +299,33 @@ const JellyMoverShell = () => {
   }, [jobs, reloadShows])
 
   useEffect(() => {
+    let cancelled = false
+
+    const loadSystemStats = async () => {
+      try {
+        const data = await apiGet<SystemStats>('/stats')
+        if (cancelled) return
+
+        setStats((prev) => ({
+          cpuPercent: data.cpu_percent,
+          memPercent: data.memory_percent,
+          hotPercent: hotUsagePercent ?? prev.hotPercent,
+          coldPercent: coldUsagePercent ?? prev.coldPercent,
+        }))
+      } catch (err) {
+        console.error('Failed to load system stats', err)
+      }
+    }
+
+    loadSystemStats()
     const interval = window.setInterval(() => {
-      setStats((prev) => ({
-        cpuPercent: randomInRange(18, 84),
-        memPercent: randomInRange(28, 82),
-        hotPercent: hotUsagePercent ?? prev.hotPercent,
-        coldPercent: coldUsagePercent ?? prev.coldPercent,
-      }))
+      if (!cancelled) loadSystemStats()
     }, 2000)
 
-    return () => window.clearInterval(interval)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
   }, [hotUsagePercent, coldUsagePercent])
 
   const showTitleMap = useMemo(() => {

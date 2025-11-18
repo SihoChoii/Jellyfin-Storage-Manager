@@ -1,0 +1,39 @@
+# JellyMover TrueNAS SCALE Compose snippet.
+# Paste this file into Apps → Custom App → Install via YAML (SCALE 24.10+).
+# IMPORTANT:
+#   - Replace every /mnt/... host path with the actual datasets on your system.
+#   - Keep the container paths (/config, /data, /media/hot, /media/cold) unchanged.
+
+version: "3.8"
+
+services:
+  jellymover:
+    image: ghcr.io/SihoChoii/jellymover:latest
+    restart: unless-stopped
+
+    # Port JellyMover listens on inside the container. SCALE can remap the external port.
+    ports:
+      - "3000:3000"
+
+    environment:
+      JM_PORT: "3000"
+      JM_CONFIG_PATH: "/config/app-config.json"
+      JM_DB_PATH: "/data/jellymover.db"
+      JM_LOG_LEVEL: "info"
+      # Optional seeds for a brand-new config file (only applied on first boot):
+      # JM_HOT_ROOT: "/media/hot"
+      # JM_COLD_ROOT: "/media/cold"
+
+    # NOTE:
+    #   - All /mnt/... host paths below are EXAMPLES.
+    #   - Edit them in the SCALE UI so they point to your datasets before deploying.
+    #   - Leave the container paths on the right (/config, /data, /media/...) unchanged.
+    volumes:
+      # Config dataset (TrueNAS dataset for app config)
+      - /mnt/POOL/apps/jellymover-config:/config
+      # Data dataset (TrueNAS dataset for DB and state)
+      - /mnt/POOL/apps/jellymover-data:/data
+      # SSD “hot” media dataset
+      - /mnt/SSDPOOL/media/anime:/media/hot
+      # HDD “cold” media dataset
+      - /mnt/HDDPOOL/media/anime_archive:/media/cold

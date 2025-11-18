@@ -5,6 +5,7 @@ mod jobs;
 mod paths;
 mod pools;
 mod scanner;
+mod system;
 
 use std::{
     env,
@@ -26,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tokio::{
     signal,
-    sync::{RwLock, watch},
+    sync::{Mutex, RwLock, watch},
 };
 use tower::util::ServiceExt;
 use tower_http::{
@@ -117,6 +118,7 @@ struct AppState {
     store: ConfigStore,
     db: DbPool,
     scan_status: Arc<RwLock<ScanStatus>>,
+    system_monitor: Arc<Mutex<system::SystemMonitor>>,
 }
 
 #[derive(Serialize)]
@@ -254,6 +256,7 @@ async fn main() {
         store: config_store,
         db: db_pool.clone(),
         scan_status: Arc::new(RwLock::new(ScanStatus::default())),
+        system_monitor: Arc::new(Mutex::new(system::SystemMonitor::new())),
     };
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -276,6 +279,7 @@ async fn main() {
         .route("/api/config", get(get_config).put(update_config))
         .route("/api/paths", get(list_paths))
         .route("/api/pools", get(get_pools))
+        .route("/api/stats", get(get_system_stats))
         .route("/api/scan", post(trigger_scan))
         .route("/api/scan/status", get(get_scan_status))
         .route("/api/jellyfin/rescan", post(trigger_jellyfin_rescan))
@@ -393,6 +397,12 @@ async fn get_pools(State(state): State<AppState>) -> Json<PoolsResponse> {
     let hot = pools::collect_pool_usage(&config.hot_root);
     let cold = pools::collect_pool_usage(&config.cold_root);
     Json(PoolsResponse { hot, cold })
+}
+
+async fn get_system_stats(State(state): State<AppState>) -> Json<system::SystemStats> {
+    let mut monitor = state.system_monitor.lock().await;
+    let stats = monitor.get_stats();
+    Json(stats)
 }
 
 async fn trigger_jellyfin_rescan(

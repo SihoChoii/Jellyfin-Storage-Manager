@@ -70,5 +70,12 @@ export interface JellyfinStatus {
   message: string | null
 }
 
+export interface SystemStats {
+  cpu_percent: number
+  memory_percent: number
+  memory_used_bytes: number
+  memory_total_bytes: number
+}
+
 export type SortField = 'title' | 'size' | 'date' | 'seasons' | 'episodes'
 export type SortDirection = 'asc' | 'desc'
