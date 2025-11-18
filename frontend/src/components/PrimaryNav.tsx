@@ -14,6 +14,9 @@ const PrimaryNav = () => {
       <NavLink to="/jobs" className={navLinkClass}>
         Jobs
       </NavLink>
+      <NavLink to="/stats" className={navLinkClass}>
+        Stats
+      </NavLink>
       <NavLink to="/settings" className={navLinkClass}>
         Settings
       </NavLink>

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../api'
-import type { PoolInfo, PoolsResponse, Show } from '../types'
+import type { PoolsResponse, Show, SortDirection, SortField } from '../types'
 import type { Job } from '../types'
 import AppHeader from './AppHeader'
 import {
-  formatBytesShort,
   formatEta,
   formatJobDirection,
   formatJobId,
@@ -15,6 +15,8 @@ import {
 } from '../utils/formatters'
 import useJobsPolling from '../hooks/useJobsPolling'
 import { deriveShowTag } from './JellyMoverShell.helpers'
+import { useDebounce } from '../utils/debounce'
+import SortDropdown from './SortDropdown'
 
 type MediaPool = 'cold' | 'hot'
 
@@ -32,7 +34,6 @@ const initialStats: StatsState = {
   coldPercent: 51,
 }
 
-const SPARK_BAR_COUNT = 18
 const SHOWS_PAGE_SIZE = 50
 const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min
 
@@ -42,13 +43,8 @@ interface ShowPaginationState {
   loading: boolean
 }
 
-const formatPoolSummary = (pool?: PoolInfo | null) => {
-  if (!pool) return 'pool unavailable'
-  return `${formatBytesShort(pool.used_bytes)} used / ${formatBytesShort(pool.total_bytes)} total`
-}
-
 const JellyMoverShell = () => {
-  const [activeScreen, setActiveScreen] = useState<'dashboard' | 'stats'>('dashboard')
+  const navigate = useNavigate()
   const [coldMedia, setColdMedia] = useState<Show[]>([])
   const [hotMedia, setHotMedia] = useState<Show[]>([])
   const [isLoadingShows, setIsLoadingShows] = useState(false)
@@ -70,22 +66,20 @@ const JellyMoverShell = () => {
   const [movingShowIds, setMovingShowIds] = useState<Set<number>>(() => new Set())
   const [moveError, setMoveError] = useState<string | null>(null)
   const [stats, setStats] = useState<StatsState>(initialStats)
-  const [sparkline, setSparkline] = useState<number[]>(() =>
-    Array.from({ length: SPARK_BAR_COUNT }, () => 0.2),
-  )
-  const [renderTimestamp] = useState(() => new Date().toLocaleTimeString())
-  const queueLengthRef = useRef(0)
-  const statsRef = useRef(initialStats)
+
+  // Search and sort state
+  const [hotSearchQuery, setHotSearchQuery] = useState('')
+  const [coldSearchQuery, setColdSearchQuery] = useState('')
+  const [hotSortBy, setHotSortBy] = useState<SortField>('title')
+  const [hotSortDir, setHotSortDir] = useState<SortDirection>('asc')
+  const [coldSortBy, setColdSortBy] = useState<SortField>('title')
+  const [coldSortDir, setColdSortDir] = useState<SortDirection>('asc')
+
+  // Debounced search queries
+  const debouncedHotSearch = useDebounce(hotSearchQuery, 300)
+  const debouncedColdSearch = useDebounce(coldSearchQuery, 300)
+
   const jobStatusMapRef = useRef<Map<number, string>>(new Map())
-
-  useEffect(() => {
-    const active = jobs.filter((job) => job.status === 'queued' || job.status === 'running').length
-    queueLengthRef.current = active
-  }, [jobs])
-
-  useEffect(() => {
-    statsRef.current = stats
-  }, [stats])
 
   const isMountedRef = useRef(true)
   useEffect(() => {
@@ -95,7 +89,15 @@ const JellyMoverShell = () => {
   }, [])
 
   const fetchShowsPage = useCallback(
-    async (location: MediaPool, options?: { reset?: boolean }) => {
+    async (
+      location: MediaPool,
+      options?: {
+        reset?: boolean
+        search?: string
+        sortBy?: SortField
+        sortDir?: SortDirection
+      },
+    ) => {
       const reset = options?.reset ?? false
       const setPagination = location === 'hot' ? setHotPagination : setColdPagination
       const setMedia = location === 'hot' ? setHotMedia : setColdMedia
@@ -120,6 +122,19 @@ const JellyMoverShell = () => {
         offset: requestOffset.toString(),
       })
 
+      // Add search parameter if provided
+      if (options?.search && options.search.trim()) {
+        params.set('search', options.search.trim())
+      }
+
+      // Add sort parameters if provided
+      if (options?.sortBy) {
+        params.set('sort_by', options.sortBy)
+      }
+      if (options?.sortDir) {
+        params.set('sort_dir', options.sortDir)
+      }
+
       try {
         const data = await apiGet<Show[]>(`/shows?${params.toString()}`)
         if (!isMountedRef.current) return
@@ -143,21 +158,58 @@ const JellyMoverShell = () => {
     [],
   )
 
+  const loadHotShows = useCallback(
+    async (reset: boolean = false) => {
+      await fetchShowsPage('hot', {
+        reset,
+        search: debouncedHotSearch,
+        sortBy: hotSortBy,
+        sortDir: hotSortDir,
+      })
+    },
+    [fetchShowsPage, debouncedHotSearch, hotSortBy, hotSortDir],
+  )
+
+  const loadColdShows = useCallback(
+    async (reset: boolean = false) => {
+      await fetchShowsPage('cold', {
+        reset,
+        search: debouncedColdSearch,
+        sortBy: coldSortBy,
+        sortDir: coldSortDir,
+      })
+    },
+    [fetchShowsPage, debouncedColdSearch, coldSortBy, coldSortDir],
+  )
+
   const reloadShows = useCallback(async () => {
     setIsLoadingShows(true)
     setShowsError(null)
     try {
-      await Promise.all([fetchShowsPage('hot', { reset: true }), fetchShowsPage('cold', { reset: true })])
+      await Promise.all([loadHotShows(true), loadColdShows(true)])
     } finally {
       if (isMountedRef.current) {
         setIsLoadingShows(false)
       }
     }
-  }, [fetchShowsPage])
+  }, [loadHotShows, loadColdShows])
 
+  // Initial load
   useEffect(() => {
     reloadShows()
   }, [reloadShows])
+
+  // Reload hot shows when search or sort changes
+  useEffect(() => {
+    loadHotShows(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedHotSearch, hotSortBy, hotSortDir])
+
+  // Reload cold shows when search or sort changes
+  useEffect(() => {
+    loadColdShows(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedColdSearch, coldSortBy, coldSortDir])
 
   useEffect(() => {
     let cancelled = false
@@ -249,29 +301,16 @@ const JellyMoverShell = () => {
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      const baseStats = statsRef.current
-      const nextStats: StatsState = {
+      setStats((prev) => ({
         cpuPercent: randomInRange(18, 84),
         memPercent: randomInRange(28, 82),
-        hotPercent: baseStats.hotPercent,
-        coldPercent: baseStats.coldPercent,
-      }
-
-      setStats(nextStats)
-      const ioSource = (hotUsagePercent ?? nextStats.hotPercent) / 100
-      setSparkline(() =>
-        Array.from({ length: SPARK_BAR_COUNT }, () => {
-          const base = nextStats.cpuPercent / 100
-          const queueFactor = Math.min(queueLengthRef.current / 10, 1)
-          const jitter = 0.3 + Math.random() * 0.7
-          const weight = 0.4 * base + 0.3 * ioSource + 0.3 * queueFactor
-          return Math.min(1.4, Math.max(0.18, weight * 1.3 * jitter))
-        }),
-      )
+        hotPercent: hotUsagePercent ?? prev.hotPercent,
+        coldPercent: coldUsagePercent ?? prev.coldPercent,
+      }))
     }, 2000)
 
     return () => window.clearInterval(interval)
-  }, [hotUsagePercent])
+  }, [hotUsagePercent, coldUsagePercent])
 
   const showTitleMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -301,25 +340,6 @@ const JellyMoverShell = () => {
   const runningJobs = jobs.filter((job) => job.status === 'running')
   const avgSpeedBytes = runningJobs.reduce((sum, job) => sum + (job.speed_bytes_per_sec ?? 0), 0)
   const avgThroughput = runningJobs.length ? (avgSpeedBytes / runningJobs.length / 1_000_000).toFixed(1) : '0.0'
-  const etaValues = runningJobs
-    .map((job) => job.eta_seconds)
-    .filter((value): value is number => typeof value === 'number' && value > 0)
-  const queueDrainEstimate = etaValues.length
-    ? (etaValues.reduce((sum, value) => sum + value, 0) / etaValues.length / 60).toFixed(1)
-    : '--'
-
-  const jobStats = useMemo(() => {
-    const running = jobs.filter((job) => job.status === 'running').length
-    const queued = jobs.filter((job) => job.status === 'queued').length
-    const success = jobs.filter((job) => job.status === 'success').length
-    const failed = jobs.filter((job) => job.status === 'failed').length
-    const bytesMoved = jobs
-      .filter((job) => job.status === 'success')
-      .reduce((sum, job) => sum + (job.total_bytes || 0), 0)
-    return { running, queued, success, failed, bytesMoved }
-  }, [jobs])
-
-  const formattedBytesMoved = jobStats.bytesMoved ? formatBytesShort(jobStats.bytesMoved) : '0 B'
 
   const renderMediaCard = (media: Show, index: number, fromPool: MediaPool) => {
     const toPool: MediaPool = fromPool === 'cold' ? 'hot' : 'cold'
@@ -397,36 +417,9 @@ const JellyMoverShell = () => {
     )
   }
 
-  const sparklineBars = sparkline.map((value, index) => (
-    <div
-      key={index}
-      className="spark-bar"
-      style={{ transform: `scaleY(${value})`, opacity: 0.45 + value * 0.35 }}
-    />
-  ))
-
   return (
     <div className="page-stack">
-        <AppHeader>
-          <nav className="top-nav" aria-label="Dashboard sections">
-            <button
-              className={`nav-btn ${activeScreen === 'dashboard' ? 'nav-btn-active' : ''}`}
-              type="button"
-              onClick={() => setActiveScreen('dashboard')}
-            >
-              <span className="dot" />
-              DASHBOARD
-            </button>
-            <button
-              className={`nav-btn ${activeScreen === 'stats' ? 'nav-btn-active' : ''}`}
-              type="button"
-              onClick={() => setActiveScreen('stats')}
-            >
-              <span className="dot" />
-              STATS / QUEUE
-            </button>
-          </nav>
-        </AppHeader>
+        <AppHeader />
 
         <div className="terminal-header">
           <div className="terminal-header-left">
@@ -447,10 +440,7 @@ const JellyMoverShell = () => {
           </div>
         </div>
 
-        <main
-          className={`screen ${activeScreen === 'dashboard' ? 'screen-active' : ''}`}
-          id="screen-dashboard"
-        >
+        <main>
           <section className="main-layout">
             <section className="panel-base pool-panel" data-label="pool: cold">
               <header className="panel-header">
@@ -463,8 +453,39 @@ const JellyMoverShell = () => {
                 </div>
                 <div className="panel-header-tools">
                   <div className="pool-meta">
-                    <span className="badge-outline badge-outline-cold">readonly-ish</span>
-                    <span className="cli-chip">tail cold.log</span>
+                    <label className="search-input">
+                      <span className="icon">⌕</span>
+                      <input
+                        type="text"
+                        placeholder="filter cold media…"
+                        aria-label="Filter cold media"
+                        value={coldSearchQuery}
+                        onChange={(e) => setColdSearchQuery(e.target.value)}
+                      />
+                      {coldSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setColdSearchQuery('')}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: '0.9rem',
+                          }}
+                          aria-label="Clear search"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </label>
+                    <SortDropdown
+                      value={coldSortBy}
+                      direction={coldSortDir}
+                      onChange={setColdSortBy}
+                      onDirectionChange={setColdSortDir}
+                    />
                   </div>
                 </div>
               </header>
@@ -487,7 +508,7 @@ const JellyMoverShell = () => {
                       className="cli-chip"
                       type="button"
                       onClick={() => {
-                        void fetchShowsPage('cold')
+                        void loadColdShows(false)
                       }}
                       disabled={coldPagination.loading}
                     >
@@ -512,9 +533,37 @@ const JellyMoverShell = () => {
                 <div className="panel-header-tools">
                   <label className="search-input">
                     <span className="icon">⌕</span>
-                    <input type="text" placeholder="filter hot media…" aria-label="Filter hot media" disabled />
+                    <input
+                      type="text"
+                      placeholder="filter hot media…"
+                      aria-label="Filter hot media"
+                      value={hotSearchQuery}
+                      onChange={(e) => setHotSearchQuery(e.target.value)}
+                    />
+                    {hotSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setHotSearchQuery('')}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 0,
+                          fontSize: '0.9rem',
+                        }}
+                        aria-label="Clear search"
+                      >
+                        ×
+                      </button>
+                    )}
                   </label>
-                  <span className="cli-chip">watch hot.log</span>
+                  <SortDropdown
+                    value={hotSortBy}
+                    direction={hotSortDir}
+                    onChange={setHotSortBy}
+                    onDirectionChange={setHotSortDir}
+                  />
                 </div>
               </header>
               <div className="media-list" id="hot-media-list">
@@ -536,7 +585,7 @@ const JellyMoverShell = () => {
                       className="cli-chip"
                       type="button"
                       onClick={() => {
-                        void fetchShowsPage('hot')
+                        void loadHotShows(false)
                       }}
                       disabled={hotPagination.loading}
                     >
@@ -557,7 +606,7 @@ const JellyMoverShell = () => {
                     <div className="queue-sub">media flowing between HOT / COLD</div>
                   </div>
                 </div>
-                <button className="cli-chip" type="button" disabled>
+                <button className="cli-chip" type="button" onClick={() => navigate('/stats')}>
                   view full stats →
                 </button>
               </header>
@@ -629,163 +678,6 @@ const JellyMoverShell = () => {
             </span>
           </div>
         </main>
-
-        <section className={`screen ${activeScreen === 'stats' ? 'screen-active' : ''}`} id="screen-stats">
-          <section className="stats-layout">
-            <section className="stats-card">
-              <div className="stats-card-title">
-                <span>Pool &amp; transfer stats</span>
-                <span className="sub">
-                  {isLoadingPools || isLoadingJobs ? 'Refreshing data…' : 'Snapshots from live APIs'}
-                </span>
-              </div>
-
-              <div className="stats-grid stats-grid--wide">
-                <div className="stats-box">
-                  <div className="stats-box-label">hot usage</div>
-                  <div className="stats-box-value">{hotUsagePercent !== null ? `${hotUsagePercent}%` : 'N/A'}</div>
-                  <div className="stats-box-sub">{formatPoolSummary(pools?.hot)}</div>
-                </div>
-                <div className="stats-box">
-                  <div className="stats-box-label">cold usage</div>
-                  <div className="stats-box-value">{coldUsagePercent !== null ? `${coldUsagePercent}%` : 'N/A'}</div>
-                  <div className="stats-box-sub">{formatPoolSummary(pools?.cold)}</div>
-                </div>
-                <div className="stats-box">
-                  <div className="stats-box-label">jobs running</div>
-                  <div className="stats-box-value">{jobStats.running}</div>
-                  <div className="stats-box-sub">actively copying</div>
-                </div>
-                <div className="stats-box">
-                  <div className="stats-box-label">jobs queued</div>
-                  <div className="stats-box-value">{jobStats.queued}</div>
-                  <div className="stats-box-sub">waiting for bandwidth</div>
-                </div>
-                <div className="stats-box">
-                  <div className="stats-box-label">jobs completed</div>
-                  <div className="stats-box-value">{jobStats.success}</div>
-                  <div className="stats-box-sub">since server start</div>
-                </div>
-                <div className="stats-box">
-                  <div className="stats-box-label">jobs failed</div>
-                  <div className="stats-box-value">{jobStats.failed}</div>
-                  <div className="stats-box-sub">needs attention</div>
-                </div>
-                <div className="stats-box">
-                  <div className="stats-box-label">bytes moved</div>
-                  <div className="stats-box-value">{formattedBytesMoved}</div>
-                  <div className="stats-box-sub">successful transfers</div>
-                </div>
-              </div>
-
-              {(poolsError || jobsError) && (
-                <div className="queue-sub">
-                  {poolsError && <span>{poolsError}</span>} {jobsError && <span>{jobsError}</span>}
-                </div>
-              )}
-            </section>
-
-            <section className="stats-card">
-              <div className="stats-card-title">
-                <span>System activity (simulated)</span>
-                <span className="sub">Placeholder CPU / memory visualization</span>
-              </div>
-
-              <div className="stats-grid">
-                <div className="stats-box">
-                  <div className="stats-box-label">cpu load</div>
-                  <div className="stats-box-value" data-key-label="cpu">
-                    {Math.round(stats.cpuPercent)}%
-                  </div>
-                  <div className="stats-box-sub">synthetic until server metrics arrive</div>
-                </div>
-                <div className="stats-box">
-                  <div className="stats-box-label">memory</div>
-                  <div className="stats-box-value" data-key-label="mem">
-                    {Math.round(stats.memPercent)}%
-                  </div>
-                  <div className="stats-box-sub">synthetic until server metrics arrive</div>
-                </div>
-              </div>
-
-              <div className="sparkline" id="sparkline">
-                {sparklineBars}
-              </div>
-
-              <div className="stats-legend">
-                <span className="legend-pill">
-                  <span className="legend-dot" /> CPU
-                </span>
-                <span className="legend-pill">
-                  <span className="legend-dot legend-dot-hot" /> I/O (simulated)
-                </span>
-                <span className="legend-pill">
-                  <span className="legend-dot legend-dot-queue" /> Queue depth
-                </span>
-              </div>
-            </section>
-
-            <section className="stats-card">
-              <div className="stats-card-title">
-                <span>Transfer queue (expanded)</span>
-                <span className="sub">top 10 moves across HOT / COLD</span>
-              </div>
-
-              <div className="stats-queue-list" id="stats-queue-list">
-                {isLoadingJobs && !jobs.length && <div className="queue-sub">Loading jobs…</div>}
-                {jobsError && !jobs.length && <div className="queue-sub">{jobsError}</div>}
-                {jobs.length > 0 ? (
-                  jobs.slice(0, 10).map((job) => {
-                    const statsTitle =
-                      showTitleMap.get(job.show_id) ||
-                      job.destination_path.split('/').pop() ||
-                      'Move job'
-                    return (
-                      <div className="queue-item" key={`stats-${job.id}`}>
-                        <div className="queue-item-title">{statsTitle}</div>
-                      <div className="queue-status-pill">{job.status}</div>
-                        <div className="queue-item-meta">
-                          <span>{formatShowSize(job.total_bytes)}</span>
-                          <span className="queue-direction">{formatJobDirection(job)}</span>
-                        </div>
-                        <div className="queue-progress-wrap">
-                          <div className="queue-progress-fill" style={{ width: `${getJobProgressPercent(job)}%` }} />
-                        </div>
-                      </div>
-                    )
-                  })
-                ) : (
-                  !isLoadingJobs && !jobsError && <div className="queue-sub">queue is empty</div>
-                )}
-              </div>
-
-              <div className="queue-footer" style={{ marginTop: '0.5rem' }}>
-                <div className="queue-footer-line">
-                  <span>queue size</span>
-                  <span>
-                    <strong id="queue-size-big">{jobs.length}</strong> items
-                  </span>
-                </div>
-                <div className="queue-footer-line">
-                  <span>est. drain time</span>
-                  <span>
-                    <strong id="queue-drain-big">{queueDrainEstimate}</strong> min
-                  </span>
-                </div>
-              </div>
-              {jobsError && <div className="queue-sub">{jobsError}</div>}
-            </section>
-          </section>
-
-              <div className="footer-line">
-                <span>
-                  &gt; coming soon: real CPU / memory metrics from the server monitor endpoint.
-                </span>
-                <span>
-                  snapshot captured at <span className="accent-hot" id="render-timestamp">{renderTimestamp}</span>
-                </span>
-              </div>
-        </section>
       </div>
   )
 }

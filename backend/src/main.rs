@@ -141,6 +141,9 @@ struct ShowsQuery {
     location: Option<String>,
     limit: Option<u32>,
     offset: Option<u32>,
+    search: Option<String>,
+    sort_by: Option<String>,
+    sort_dir: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -570,38 +573,78 @@ async fn list_shows(
         .filter(|value| !value.is_empty())
         .map(|value| value.to_string());
 
+    let search = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.len() <= 100)
+        .map(|value| value.to_string());
+
     let limit = query.limit.unwrap_or(50).min(500) as i64;
     let offset = query.offset.unwrap_or(0) as i64;
 
-    let rows = if let Some(loc) = location {
-        sqlx::query_as::<_, ShowRecord>(
-            r#"
-            SELECT id, title, path, location, size_bytes, season_count, episode_count, thumbnail_path
-            FROM shows
-            WHERE location IS NOT NULL AND lower(location) = lower(?)
-            ORDER BY title COLLATE NOCASE
-            LIMIT ? OFFSET ?
-            "#,
-        )
-        .bind(loc)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await
-    } else {
-        sqlx::query_as::<_, ShowRecord>(
-            r#"
-            SELECT id, title, path, location, size_bytes, season_count, episode_count, thumbnail_path
-            FROM shows
-            ORDER BY title COLLATE NOCASE
-            LIMIT ? OFFSET ?
-            "#,
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await
+    // Validate and map sort_by parameter to actual column names
+    let sort_column = match query.sort_by.as_deref() {
+        Some("title") => "title COLLATE NOCASE",
+        Some("size") => "size_bytes",
+        Some("date") => "last_scan",
+        Some("seasons") => "season_count",
+        Some("episodes") => "episode_count",
+        _ => "title COLLATE NOCASE", // default
     };
+
+    // Validate sort direction
+    let sort_direction = match query.sort_dir.as_deref() {
+        Some("desc") | Some("DESC") => "DESC",
+        _ => "ASC", // default
+    };
+
+    // Build dynamic SQL query
+    let mut sql = String::from(
+        "SELECT id, title, path, location, size_bytes, season_count, episode_count, thumbnail_path FROM shows"
+    );
+
+    let mut where_clauses = Vec::new();
+
+    // Add location filter if provided
+    if location.is_some() {
+        where_clauses.push("lower(location) = lower(?)".to_string());
+    }
+
+    // Add search filter if provided
+    if search.is_some() {
+        where_clauses.push("(title LIKE ? OR path LIKE ?)".to_string());
+    }
+
+    if !where_clauses.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&where_clauses.join(" AND "));
+    }
+
+    // Add ORDER BY clause
+    sql.push_str(&format!(" ORDER BY {} {}", sort_column, sort_direction));
+
+    // Add LIMIT and OFFSET
+    sql.push_str(" LIMIT ? OFFSET ?");
+
+    // Prepare search pattern outside the match to extend its lifetime
+    let search_pattern = search.as_ref().map(|term| format!("%{}%", term));
+
+    // Build and execute query with proper parameter binding
+    let mut db_query = sqlx::query_as::<_, ShowRecord>(&sql);
+
+    if let Some(loc) = location {
+        db_query = db_query.bind(loc);
+    }
+
+    if let Some(pattern) = &search_pattern {
+        db_query = db_query.bind(pattern);
+        db_query = db_query.bind(pattern);
+    }
+
+    db_query = db_query.bind(limit).bind(offset);
+
+    let rows = db_query.fetch_all(&state.db).await;
 
     match rows {
         Ok(rows) => Ok(Json(rows)),

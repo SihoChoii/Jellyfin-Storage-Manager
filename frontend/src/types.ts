@@ -69,3 +69,6 @@ export interface JellyfinStatus {
   auth_ok: boolean
   message: string | null
 }
+
+export type SortField = 'title' | 'size' | 'date' | 'seasons' | 'episodes'
+export type SortDirection = 'asc' | 'desc'

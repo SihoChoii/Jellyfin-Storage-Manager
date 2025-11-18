@@ -5,6 +5,7 @@ import SetupWizard from './components/SetupWizard.tsx'
 import JobsPage from './pages/JobsPage.tsx'
 import LibraryPage from './pages/LibraryPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
+import StatsPage from './pages/StatsPage.tsx'
 import type { AppConfig } from './types.ts'
 
 const needsConfigSetup = (config: AppConfig | null) => {
@@ -87,6 +88,7 @@ function App() {
       <Route element={<AppLayout />}>
         <Route path="/" element={<LibraryPage />} />
         <Route path="/jobs" element={<JobsPage />} />
+        <Route path="/stats" element={<StatsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>

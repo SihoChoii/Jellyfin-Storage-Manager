@@ -157,5 +157,34 @@ async fn create_indexes(pool: &DbPool) -> Result<(), sqlx::Error> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);")
         .execute(pool)
         .await?;
+
+    // Sort column indexes for performance
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_title ON shows(title COLLATE NOCASE);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_size_bytes ON shows(size_bytes);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_last_scan ON shows(last_scan);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_season_count ON shows(season_count);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_episode_count ON shows(episode_count);")
+        .execute(pool)
+        .await?;
+
+    // Composite indexes for filtered sort queries
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_location_title ON shows(location, title COLLATE NOCASE);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_location_size ON shows(location, size_bytes);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_location_date ON shows(location, last_scan);")
+        .execute(pool)
+        .await?;
+
     Ok(())
 }
