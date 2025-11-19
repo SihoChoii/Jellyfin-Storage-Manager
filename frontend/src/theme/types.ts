@@ -582,6 +582,7 @@ export interface TransitionEasing {
   easeOut: string
   easeInOut: string
   custom?: string  // For custom cubic-bezier curves
+  spring: string   // Spring-like easing for interactive elements
 }
 
 /**
@@ -1065,8 +1066,8 @@ export type PartialTheme = Partial<Theme> & {
  */
 export type ThemeOverride = {
   [K in keyof Theme]?: K extends 'meta'
-    ? Theme['meta']
-    : DeepPartial<Theme[K]>
+  ? Theme['meta']
+  : DeepPartial<Theme[K]>
 }
 
 /**

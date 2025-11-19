@@ -38,8 +38,15 @@ const CSS_VARIABLE_MAP: Record<string, (theme: Theme) => string> = {
   // Ambient gradient colors (for .bg-gradient overlays)
   '--bg-gradient-cold': (theme) => theme.colors.accent.coldSoft,
   '--bg-gradient-hot': (theme) => theme.colors.accent.hotSoft,
-  '--bg-gradient-magenta': (theme) =>
-    theme.colors.accent.magenta ? 'rgba(255, 76, 237, 0.22)' : 'transparent',
+  '--bg-gradient-magenta': (theme) => {
+    if (!theme.colors.accent.magenta) return 'transparent'
+    // Convert magenta hex color to rgba with 0.22 opacity to match other soft gradients
+    const hex = theme.colors.accent.magenta.replace('#', '')
+    const r = parseInt(hex.slice(0, 2), 16)
+    const g = parseInt(hex.slice(2, 4), 16)
+    const b = parseInt(hex.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, 0.22)`
+  },
 
   // Component-specific backgrounds
   '--bg-input-search': (theme) =>
@@ -257,6 +264,18 @@ const CSS_VARIABLE_MAP: Record<string, (theme: Theme) => string> = {
   '--transition-slow': (theme) => theme.transitions.duration.slow,
   '--ease-out': (theme) => theme.transitions.easing.easeOut,
   '--ease-in-out': (theme) => theme.transitions.easing.easeInOut,
+  '--ease-spring': (theme) => theme.transitions.easing.spring,
+
+  // =========================================================================
+  // Animation Durations
+  // =========================================================================
+  '--anim-bg-drift': (theme) => theme.animations.bgDrift.duration,
+  '--anim-shine-sweep': (theme) => theme.animations.shineSweep.duration,
+  '--anim-screen-in': (theme) => theme.animations.screenIn.duration,
+  '--anim-card-in': (theme) => theme.animations.cardIn.duration,
+  '--anim-progress-shift': (theme) => theme.animations.progressShift.duration,
+  '--anim-stat-flow': (theme) => theme.animations.statFlow.duration,
+  '--anim-stagger-delay': (theme) => theme.animations.staggerDelay,
 
   // =========================================================================
   // Spacing Scale

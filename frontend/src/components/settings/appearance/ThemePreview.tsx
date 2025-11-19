@@ -21,19 +21,19 @@ export const ThemePreview: React.FC<ThemePreviewProps> = ({
   // Extract key colors for preview
   const swatches = [
     {
-      color: colors.accent.hot,
-      title: 'Hot Accent',
-      label: 'HOT'
+      color: colors.background.main,
+      title: 'Background',
+      label: 'BG'
     },
     {
-      color: colors.accent.cold,
-      title: 'Cold Accent',
-      label: 'COLD'
+      color: colors.text.primary,
+      title: 'Text',
+      label: 'TXT'
     },
     {
       color: colors.accent.primary,
       title: 'Primary Accent',
-      label: 'PRIMARY'
+      label: 'PRI'
     }
   ];
 

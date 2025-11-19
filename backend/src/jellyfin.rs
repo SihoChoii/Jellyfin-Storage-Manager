@@ -93,6 +93,24 @@ impl JellyfinClient {
             .await?;
         Ok(response.status())
     }
+    pub async fn get_tasks(&self) -> Result<Vec<TaskInfo>, JellyfinError> {
+        let url = format!("{}/ScheduledTasks", self.base_url);
+        info!(endpoint = %url, "Fetching Jellyfin scheduled tasks");
+
+        let response = self
+            .http
+            .get(&url)
+            .header("X-Emby-Token", &self.api_key)
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let tasks: Vec<TaskInfo> = response.json().await?;
+            Ok(tasks)
+        } else {
+            Err(JellyfinError::UnexpectedStatus(response.status()))
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -108,6 +126,41 @@ pub struct JellyfinStatus {
     pub health_status_code: Option<u16>,
     pub library_status_code: Option<u16>,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct TaskInfo {
+    pub name: Option<String>,
+    pub state: TaskState,
+    pub current_progress_percentage: Option<f64>,
+    pub id: Option<String>,
+    pub last_execution_result: Option<TaskResult>,
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Serialize, serde::Deserialize, PartialEq)]
+pub enum TaskState {
+    Idle,
+    Cancelling,
+    Running,
+}
+
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct TaskResult {
+    pub start_time_utc: String,
+    pub end_time_utc: String,
+    pub status: TaskCompletionStatus,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Serialize, serde::Deserialize)]
+pub enum TaskCompletionStatus {
+    Completed,
+    Failed,
+    Cancelled,
+    Aborted,
 }
 
 pub async fn check_status(config: &Config) -> Result<JellyfinStatus, JellyfinError> {

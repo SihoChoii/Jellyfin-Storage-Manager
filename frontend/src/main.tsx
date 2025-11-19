@@ -4,13 +4,16 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
 import './styles.css'
 import { ThemeProvider } from './theme'
+import { ThemeErrorBoundary } from './theme/ThemeErrorBoundary'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <ThemeProvider>
-        <App />
-      </ThemeProvider>
+      <ThemeErrorBoundary>
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
+      </ThemeErrorBoundary>
     </BrowserRouter>
   </StrictMode>,
 )

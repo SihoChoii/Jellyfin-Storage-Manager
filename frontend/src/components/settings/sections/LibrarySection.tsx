@@ -67,6 +67,8 @@ export const LibrarySection: React.FC<LibrarySectionProps> = ({ onSave }) => {
   const [jellyfinScanLoading, setJellyfinScanLoading] = useState(false);
   const [jellyfinScanMessage, setJellyfinScanMessage] = useState<string | null>(null);
   const [jellyfinScanError, setJellyfinScanError] = useState<string | null>(null);
+  const [jellyfinScanStatus, setJellyfinScanStatus] = useState<ScanStatus | null>(null);
+  const [jellyfinScanStatusError, setJellyfinScanStatusError] = useState<string | null>(null);
 
   const [jellyfinTestLoading, setJellyfinTestLoading] = useState(false);
   const [jellyfinTestMessage, setJellyfinTestMessage] = useState<string | null>(null);
@@ -111,6 +113,29 @@ export const LibrarySection: React.FC<LibrarySectionProps> = ({ onSave }) => {
     }
   }, []);
 
+  const loadJellyfinScanStatus = useCallback(async () => {
+    // Only try to load if we have some config
+    if (!formState.jellyfin_url && !formState.jellyfin_api_key) {
+      return null;
+    }
+
+    try {
+      const status = await apiGet<ScanStatus>('/jellyfin/scan/status');
+      setJellyfinScanStatus(status);
+      setJellyfinScanStatusError(null);
+      return status;
+    } catch (err) {
+      // Don't spam errors if just not configured yet
+      if (!formState.jellyfin_url || !formState.jellyfin_api_key) {
+        return null;
+      }
+      console.error('Failed to load Jellyfin scan status', err);
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setJellyfinScanStatusError(`Failed to load Jellyfin scan status (${message}).`);
+      return null;
+    }
+  }, [formState.jellyfin_url, formState.jellyfin_api_key]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -118,7 +143,10 @@ export const LibrarySection: React.FC<LibrarySectionProps> = ({ onSave }) => {
       if (cancelled) {
         return;
       }
-      await loadScanStatus();
+      await Promise.all([
+        loadScanStatus(),
+        loadJellyfinScanStatus()
+      ]);
     };
 
     poll();
@@ -128,7 +156,7 @@ export const LibrarySection: React.FC<LibrarySectionProps> = ({ onSave }) => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [loadScanStatus]);
+  }, [loadScanStatus, loadJellyfinScanStatus]);
 
   const handleInputChange = (field: keyof SettingsFormState, value: string) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
@@ -196,6 +224,7 @@ export const LibrarySection: React.FC<LibrarySectionProps> = ({ onSave }) => {
     try {
       await apiPost('/jellyfin/rescan');
       setJellyfinScanMessage('Jellyfin rescan requested.');
+      await loadJellyfinScanStatus();
     } catch (err) {
       console.error('Failed to trigger Jellyfin rescan', err);
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -386,11 +415,34 @@ export const LibrarySection: React.FC<LibrarySectionProps> = ({ onSave }) => {
             >
               Rescan Jellyfin Library
             </SettingsButton>
+            <div className="settings-info-stack">
+              <SettingsInfoRow
+                label="Scan status"
+                value={jellyfinScanStatus ? (
+                  <span className={`scan-status-badge scan-status-badge--${jellyfinScanStatus.state.toLowerCase()}`}>
+                    <span className="scan-status-dot" aria-hidden="true" />
+                    {jellyfinScanStatus.state}
+                  </span>
+                ) : 'Loading…'}
+              />
+              <SettingsInfoRow
+                label="Last started"
+                value={formatScanTimestamp(jellyfinScanStatus?.last_started)}
+              />
+              <SettingsInfoRow
+                label="Last finished"
+                value={formatScanTimestamp(jellyfinScanStatus?.last_finished)}
+              />
+            </div>
             {!jellyfinConfigured && (
               <SettingsHint>Add Jellyfin details above to enable this action.</SettingsHint>
             )}
             <SettingsFeedback type="success" message={jellyfinScanMessage} />
             <SettingsFeedback type="error" message={jellyfinScanError} />
+            <SettingsFeedback type="error" message={jellyfinScanStatusError} />
+            {jellyfinScanStatus?.last_error && (
+              <SettingsFeedback type="error" message={`Last scan error: ${jellyfinScanStatus.last_error}`} />
+            )}
           </div>
         </SettingsCard>
 

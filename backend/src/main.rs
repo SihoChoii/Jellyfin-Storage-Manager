@@ -395,6 +395,7 @@ async fn main() {
         .route("/api/scan", post(trigger_scan))
         .route("/api/scan/status", get(get_scan_status))
         .route("/api/jellyfin/rescan", post(trigger_jellyfin_rescan))
+        .route("/api/jellyfin/scan/status", get(get_jellyfin_scan_status))
         .route("/api/jellyfin/status", get(get_jellyfin_status))
         .route("/api/shows", get(list_shows))
         .route("/api/shows/:id/thumbnail", get(get_show_thumbnail))
@@ -543,6 +544,82 @@ async fn trigger_jellyfin_rescan(
                 "Failed to trigger Jellyfin rescan",
             ))
         }
+    }
+}
+
+async fn get_jellyfin_status(
+    State(state): State<AppState>,
+) -> Result<Json<crate::jellyfin::JellyfinStatus>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await.clone();
+    match crate::jellyfin::check_status(&config).await {
+        Ok(status) => Ok(Json(status)),
+        Err(crate::jellyfin::JellyfinError::NotConfigured) => {
+            // Return a default "not configured" status instead of 400
+            Ok(Json(crate::jellyfin::JellyfinStatus {
+                configured: false,
+                server_reachable: false,
+                auth_ok: false,
+                health_status_code: None,
+                library_status_code: None,
+                message: None,
+            }))
+        }
+        Err(err) => {
+            error!(?err, "Failed to check Jellyfin status");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to check Jellyfin status",
+            ))
+        }
+    }
+}
+
+async fn get_jellyfin_scan_status(
+    State(state): State<AppState>,
+) -> Result<Json<ScanStatus>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await.clone();
+    let client = JellyfinClient::from_config(&config)
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "Jellyfin not configured"))?;
+
+    let tasks = client.get_tasks().await.map_err(|err| {
+        error!(?err, "Failed to fetch Jellyfin tasks");
+        error_response(StatusCode::BAD_GATEWAY, "Failed to fetch Jellyfin tasks")
+    })?;
+
+    // Find the "Refresh Library" task
+    let refresh_task = tasks
+        .into_iter()
+        .find(|t| t.key.as_deref() == Some("RefreshLibrary"));
+
+    if let Some(task) = refresh_task {
+        let state = match task.state {
+            crate::jellyfin::TaskState::Running => ScanState::Running,
+            _ => ScanState::Idle,
+        };
+
+        let (last_started, last_finished, last_error) =
+            if let Some(result) = task.last_execution_result {
+                let start = chrono::DateTime::parse_from_rfc3339(&result.start_time_utc)
+                    .ok()
+                    .map(|dt| dt.timestamp());
+                let end = chrono::DateTime::parse_from_rfc3339(&result.end_time_utc)
+                    .ok()
+                    .map(|dt| dt.timestamp());
+                let error = result.error_message;
+                (start, end, error)
+            } else {
+                (None, None, None)
+            };
+
+        Ok(Json(ScanStatus {
+            state,
+            last_started,
+            last_finished,
+            last_error,
+        }))
+    } else {
+        // Task not found, return default idle status
+        Ok(Json(ScanStatus::default()))
     }
 }
 
@@ -1181,41 +1258,4 @@ fn job_error_response(error: jobs::JobError) -> (StatusCode, Json<ErrorResponse>
         }
     }
 }
-async fn get_jellyfin_status(
-    State(state): State<AppState>,
-) -> Result<Json<jellyfin::JellyfinStatus>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await.clone();
 
-    match jellyfin::check_status(&config).await {
-        Ok(status) if !status.configured => Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "Jellyfin not configured",
-        )),
-        Ok(status) if !status.server_reachable => Err(error_response(
-            StatusCode::BAD_GATEWAY,
-            status
-                .message
-                .clone()
-                .unwrap_or_else(|| "Jellyfin server not reachable".into()),
-        )),
-        Ok(status) if !status.auth_ok => Err(error_response(
-            StatusCode::UNAUTHORIZED,
-            status
-                .message
-                .clone()
-                .unwrap_or_else(|| "Jellyfin authentication failed".into()),
-        )),
-        Ok(status) => Ok(Json(status)),
-        Err(JellyfinError::NotConfigured) => Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "Jellyfin not configured",
-        )),
-        Err(error) => {
-            error!(?error, "Failed to check Jellyfin status");
-            Err(error_response(
-                StatusCode::BAD_GATEWAY,
-                "Failed to contact Jellyfin",
-            ))
-        }
-    }
-}

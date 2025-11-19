@@ -240,7 +240,7 @@ export const lightTheme: Theme = {
     letterSpacing: {
       tighter: '-0.015em', // Tighter for large headings
       tight: '0em', // Normal for most text
-      normal: '0.01em', // Slight spacing for clarity (vs 0.14em in Jelly)
+      normal: '0em', // Standard for Inter font (consistent with Dark theme)
       wide: '0.025em', // Subtle wide spacing (vs 0.18em in Jelly)
       wider: '0.04em', // For labels/small caps (vs 0.22em in Jelly)
       widest: '0.08em', // Use sparingly (vs 0.28em in Jelly)
@@ -326,6 +326,7 @@ export const lightTheme: Theme = {
       easeOut: 'ease-out',
       easeInOut: 'ease-in-out',
       custom: 'cubic-bezier(0.21, 0.96, 0.41, 1)',
+      spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
     },
   },
 

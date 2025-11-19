@@ -318,6 +318,7 @@ export const jellyTheme: Theme = {
       easeOut: 'ease-out',
       easeInOut: 'ease-in-out',
       custom: 'cubic-bezier(0.21, 0.96, 0.41, 1)', // Card in animation
+      spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
     },
   },
 

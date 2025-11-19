@@ -275,7 +275,9 @@ export function ThemeProvider({
     return () => {
       cancelled = true
     }
-    // Only run once on mount
+    // Only run once on mount to fetch backend preference
+    // Safe to disable: setThemeKey and setStoredTheme are stable setState functions
+    // themeKey is intentionally excluded to prevent re-running on theme changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

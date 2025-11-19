@@ -108,11 +108,11 @@ export const darkTheme: Theme = {
       cold: '#3dd5ff', // Only used in charts/pools
       coldSoft: 'rgba(61, 213, 255, 0.15)',
 
-      // No magenta, no secondary, no gradient ends
-      magenta: undefined,
-      secondary: undefined,
-      hotGradientEnd: undefined,
-      coldGradientEnd: undefined,
+      // Minimal theme: magenta and secondary use primary blue, gradients same as base colors
+      magenta: '#0ea5e9', // Use primary blue for minimal design consistency
+      secondary: '#0ea5e9', // Use primary blue
+      hotGradientEnd: '#ff6b3d', // No gradients - same as hot for solid buttons
+      coldGradientEnd: '#3dd5ff', // No gradients - same as cold for solid buttons
     },
 
     // Semantic Colors - Vivid but not neon
@@ -332,6 +332,7 @@ export const darkTheme: Theme = {
       easeOut: 'ease-out',
       easeInOut: 'ease-in-out',
       custom: 'cubic-bezier(0.16, 1, 0.3, 1)', // Smooth modern easing
+      spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
     },
   },
 

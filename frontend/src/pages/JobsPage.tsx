@@ -103,7 +103,7 @@ const JobsPage = () => {
         <>
           <span className="tiny-pill">job monitor</span>
           <span className="header-hint">{headerHint}</span>
-          <button className="cli-chip" type="button" onClick={() => void refreshJobs()} disabled={isLoading && !displayJobs.length}>
+          <button className="cli-chip btn-animated" type="button" onClick={() => void refreshJobs()} disabled={isLoading && !displayJobs.length}>
             Refresh
           </button>
         </>
@@ -228,7 +228,7 @@ const JobsPage = () => {
               <div className="jobs-table-actions">
                 {loadMoreError && <span className="queue-sub">{loadMoreError}</span>}
                 {jobsHasMore ? (
-                  <button className="cli-chip" type="button" onClick={() => void loadMoreJobs()} disabled={loadingMoreJobs}>
+                  <button className="cli-chip btn-animated" type="button" onClick={() => void loadMoreJobs()} disabled={loadingMoreJobs}>
                     {loadingMoreJobs ? 'Loading more…' : 'Load more jobs'}
                   </button>
                 ) : (

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../api'
-import type { PoolsResponse, Show, SortDirection, SortField, SystemStats, ScanStatus } from '../types'
+import type { PoolsResponse, Show, SortDirection, SortField, SystemStats, ScanStatus, JobAnalytics } from '../types'
 import type { Job } from '../types'
 import AppHeader from './AppHeader'
 import {
@@ -15,6 +15,7 @@ import {
   getJobProgressPercent,
 } from '../utils/formatters'
 import useJobsPolling from '../hooks/useJobsPolling'
+import { useTheme } from '../theme/context'
 import { deriveShowTag } from './JellyMoverShell.helpers'
 import { useDebounce } from '../utils/debounce'
 import SortDropdown from './SortDropdown'
@@ -37,22 +38,7 @@ const initialStats: StatsState = {
 
 const SHOWS_PAGE_SIZE = 50
 
-const formatRelativeTime = (timestamp: number | null) => {
-  if (!timestamp) return null
-  const now = Date.now()
-  const delta = now - timestamp * 1000
-  if (delta < 0) {
-    return new Date(timestamp * 1000).toLocaleString()
-  }
-  const minutes = Math.floor(delta / 60000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return new Date(timestamp * 1000).toLocaleDateString()
-}
+
 
 interface ShowPaginationState {
   offset: number
@@ -79,12 +65,16 @@ const JellyMoverShell = () => {
   const [pools, setPools] = useState<PoolsResponse | null>(null)
   const [isLoadingPools, setIsLoadingPools] = useState(false)
   const [poolsError, setPoolsError] = useState<string | null>(null)
-  const { jobs, isLoading: isLoadingJobs, error: jobsError } = useJobsPolling({ intervalMs: 2000 })
+  const [jobsLimit, setJobsLimit] = useState(10)
+  const { jobs, isLoading: isLoadingJobs, error: jobsError } = useJobsPolling({ intervalMs: 2000, limit: jobsLimit })
+  const [analytics, setAnalytics] = useState<JobAnalytics | null>(null)
   const [movingShowIds, setMovingShowIds] = useState<Set<number>>(() => new Set())
   const [moveError, setMoveError] = useState<string | null>(null)
   const [stats, setStats] = useState<StatsState>(initialStats)
   const [isScanRunning, setIsScanRunning] = useState(false)
-  const [lastScanFinishedAt, setLastScanFinishedAt] = useState<number | null>(null)
+  const [isJellyfinScanRunning, setIsJellyfinScanRunning] = useState(false)
+
+  const { themeKey } = useTheme()
 
   // Search and sort state
   const [hotSearchQuery, setHotSearchQuery] = useState('')
@@ -100,6 +90,7 @@ const JellyMoverShell = () => {
 
   const jobStatusMapRef = useRef<Map<number, string>>(new Map())
   const scanStatusRef = useRef<ScanStatus | null>(null)
+  const jellyfinScanStatusRef = useRef<ScanStatus | null>(null)
 
   const isMountedRef = useRef(true)
   useEffect(() => {
@@ -225,12 +216,17 @@ const JellyMoverShell = () => {
 
     const pollScanStatus = async () => {
       try {
-        const status = await apiGet<ScanStatus>('/scan/status')
+        const [status, jellyfinStatus] = await Promise.all([
+          apiGet<ScanStatus>('/scan/status'),
+          apiGet<ScanStatus>('/jellyfin/scan/status').catch(() => null), // Handle if not configured
+        ])
+
         if (cancelled) return
+
+        // Library Scan Logic
         const previous = scanStatusRef.current
         scanStatusRef.current = status
         setIsScanRunning(status.state === 'Running')
-        setLastScanFinishedAt(status.last_finished ?? null)
 
         if (previous) {
           const prevFinished = previous.last_finished ?? null
@@ -240,6 +236,12 @@ const JellyMoverShell = () => {
           if (transitionedToIdle || finishedChanged) {
             reloadShows()
           }
+        }
+
+        // Jellyfin Scan Logic
+        if (jellyfinStatus) {
+          jellyfinScanStatusRef.current = jellyfinStatus
+          setIsJellyfinScanRunning(jellyfinStatus.state === 'Running')
         }
       } catch (err) {
         if (import.meta.env.DEV) {
@@ -260,14 +262,12 @@ const JellyMoverShell = () => {
   // Reload hot shows when search or sort changes
   useEffect(() => {
     loadHotShows(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedHotSearch, hotSortBy, hotSortDir])
+  }, [loadHotShows])
 
   // Reload cold shows when search or sort changes
   useEffect(() => {
     loadColdShows(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedColdSearch, coldSortBy, coldSortDir])
+  }, [loadColdShows])
 
   useEffect(() => {
     let cancelled = false
@@ -341,6 +341,24 @@ const JellyMoverShell = () => {
     }
   }
 
+  const triggerLibraryScan = async () => {
+    try {
+      setIsScanRunning(true)
+      await apiPost('/scan')
+    } catch (err) {
+      console.error('Failed to trigger library scan', err)
+    }
+  }
+
+  const triggerJellyfinScan = async () => {
+    try {
+      setIsJellyfinScanRunning(true)
+      await apiPost('/jellyfin/rescan')
+    } catch (err) {
+      console.error('Failed to trigger jellyfin scan', err)
+    }
+  }
+
   useEffect(() => {
     const prevStatuses = jobStatusMapRef.current
     const nextStatuses = new Map<number, string>()
@@ -387,6 +405,28 @@ const JellyMoverShell = () => {
     }
   }, [hotUsagePercent, coldUsagePercent])
 
+  useEffect(() => {
+    let cancelled = false
+    const loadAnalytics = async () => {
+      try {
+        const data = await apiGet<JobAnalytics>('/jobs/analytics')
+        if (!cancelled) {
+          setAnalytics(data)
+        }
+      } catch (err) {
+        console.error('Failed to load job analytics', err)
+      }
+    }
+
+    loadAnalytics()
+    const interval = window.setInterval(loadAnalytics, 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
+
   const showTitleMap = useMemo(() => {
     const map = new Map<number, string>()
     coldMedia.forEach((show) => {
@@ -410,8 +450,9 @@ const JellyMoverShell = () => {
     return set
   }, [jobs])
 
-  const queueActive = jobs.filter((job) => job.status === 'queued' || job.status === 'running').length
-  const queueActiveDisplay = Math.min(queueActive, 3)
+  const queueActive = analytics ? analytics.running_count + analytics.queued_count : jobs.filter((job) => job.status === 'queued' || job.status === 'running').length
+  const queueActiveDisplay = analytics ? analytics.running_count : Math.min(queueActive, 3)
+  const totalJobsCount = analytics ? analytics.total_jobs : jobs.length
   const runningJobs = jobs.filter((job) => job.status === 'running')
   const avgSpeedBytes = runningJobs.reduce((sum, job) => sum + (job.speed_bytes_per_sec ?? 0), 0)
   const avgThroughput = runningJobs.length ? (avgSpeedBytes / runningJobs.length / 1_000_000).toFixed(1) : '0.0'
@@ -427,10 +468,10 @@ const JellyMoverShell = () => {
     const hasThumbnail = media.thumbnail_path?.trim()
     const thumbStyle = hasThumbnail
       ? {
-          backgroundImage: `url(/api/shows/${media.id}/thumbnail)`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }
+        backgroundImage: `url(/api/shows/${media.id}/thumbnail)`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
       : undefined
 
     return (
@@ -458,6 +499,7 @@ const JellyMoverShell = () => {
           type="button"
           onClick={() => handleMoveClick(media, toPool)}
           disabled={isBusy}
+          aria-label={`Move ${media.title} to ${toPool} storage`}
         >
           <span className="icon">{isHotTarget ? '🔥' : '❄️'}</span>
           {isBusy ? 'WORKING…' : `MOVE TO ${toPool.toUpperCase()}`}
@@ -494,211 +536,220 @@ const JellyMoverShell = () => {
 
   return (
     <div className="page-stack">
-        <AppHeader />
+      <AppHeader />
 
-        <div className="terminal-header">
-          <div className="terminal-header-left">
-            <span className="prompt-user">jellymover</span>
-            <span className="prompt-host">@truenas</span>
-            <span>:</span>
-            <span className="prompt-path">~/pools/&lt;cold&gt;/&lt;hot&gt;</span>
-            <span>$</span>
-            <span>./jellymover --watch --jellyfin=/media/jellyfin</span>
-          </div>
-          <div className="terminal-header-right">
-            <span className="tiny-pill">
-              mode: <strong>dark / cli</strong>
-            </span>
-            <span className="tiny-pill">
-              transport: <strong>ssd ↔ hdd</strong>
-            </span>
-            <span
-              className={`tiny-pill tiny-pill-status ${isScanRunning ? 'tiny-pill-status--running' : ''}`.trim()}
-            >
-              <span className="status-dot" aria-hidden="true" />
-              scan: <strong>{isScanRunning ? 'running' : 'idle'}</strong>
-              {!isScanRunning && (
-                <span className="tiny-pill-status-time">
-                  {lastScanFinishedAt ? `last run ${formatRelativeTime(lastScanFinishedAt)}` : 'no scans yet'}
-                </span>
-              )}
-            </span>
-          </div>
+      <div className="terminal-header">
+        <div className="terminal-header-left">
+          <span className="prompt-user">jellymover</span>
+          <span className="prompt-host">@truenas</span>
+          <span>:</span>
+          <span className="prompt-path">~/pools/&lt;cold&gt;/&lt;hot&gt;</span>
+          <span>$</span>
+          <span>./jellymover --watch --jellyfin=/media/jellyfin</span>
         </div>
+        <div className="terminal-header-right">
+          <span className="tiny-pill">
+            mode: <strong>{themeKey}</strong>
+          </span>
 
-        <main>
-          <section className="main-layout">
-            <section className="panel-base pool-panel" data-label="pool: cold">
-              <header className="panel-header">
-                <div className="panel-title-row">
-                  <div className="pool-tag">
-                    <span className="dot" />
-                    COLD
-                  </div>
-                  <div className="pool-title">
-                    {pools?.cold?.path || 'Archive / HDD Pool'}
-                    {pools?.cold && (
-                      <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.9em' }}>
-                        • {formatBytesShort(pools.cold.free_bytes)} free / {formatBytesShort(pools.cold.total_bytes)} ({coldUsagePercent}% used)
-                      </span>
-                    )}
-                  </div>
+          <span
+            className={`tiny-pill tiny-pill-status ${isScanRunning ? 'tiny-pill-status--running' : ''}`.trim()}
+          >
+            <span className="status-dot" aria-hidden="true" />
+            lib: <strong>{isScanRunning ? 'scanning' : 'idle'}</strong>
+            {!isScanRunning && (
+              <button
+                type="button"
+                className="tiny-pill-action btn-animated"
+                onClick={triggerLibraryScan}
+                title="Scan Library"
+                aria-label="Scan library for media files"
+              >
+                SCAN
+              </button>
+            )}
+          </span>
+
+          <span
+            className={`tiny-pill tiny-pill-status ${isJellyfinScanRunning ? 'tiny-pill-status--running' : ''}`.trim()}
+          >
+            <span className="status-dot" aria-hidden="true" />
+            jellyfin: <strong>{isJellyfinScanRunning ? 'scanning' : 'idle'}</strong>
+            {!isJellyfinScanRunning && (
+              <button
+                type="button"
+                className="tiny-pill-action btn-animated"
+                onClick={triggerJellyfinScan}
+                title="Scan Jellyfin"
+                aria-label="Scan Jellyfin library"
+              >
+                SCAN
+              </button>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <main>
+        <section className="main-layout">
+          <section className="panel-base pool-panel" data-label="pool: cold">
+            <header className="panel-header">
+              <div className="panel-title-row">
+                <div className="pool-tag">
+                  <span className="dot" />
+                  COLD
                 </div>
-                <div className="panel-header-tools">
-                  <div className="pool-meta">
-                    <label className="search-input">
-                      <span className="icon">⌕</span>
-                      <input
-                        type="text"
-                        placeholder="filter cold media…"
-                        aria-label="Filter cold media"
-                        value={coldSearchQuery}
-                        onChange={(e) => setColdSearchQuery(e.target.value)}
-                      />
-                      {coldSearchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setColdSearchQuery('')}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            padding: 0,
-                            fontSize: '0.9rem',
-                          }}
-                          aria-label="Clear search"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </label>
-                    <SortDropdown
-                      value={coldSortBy}
-                      direction={coldSortDir}
-                      onChange={setColdSortBy}
-                      onDirectionChange={setColdSortDir}
-                    />
-                  </div>
-                </div>
-              </header>
-              <div className="media-list" id="cold-media-list">
-                {isLoadingShows && !coldMedia.length && <p className="queue-sub">Loading cold media…</p>}
-                {showsError && !coldMedia.length && <p className="queue-sub">{showsError}</p>}
-                {coldMedia.length > 0
-                  ? coldMedia.map((item, index) => renderMediaCard(item, index, 'cold'))
-                  : !isLoadingShows && !showsError && (
-                      <div className="queue-footer-line">
-                        <span>Cold pool is empty</span>
-                        <span>queue up a move.</span>
-                      </div>
-                    )}
-              </div>
-              {!isLoadingShows && coldMedia.length > 0 && !showsError && (
-                <div className="media-list-actions">
-                  {coldPagination.hasMore ? (
-                    <button
-                      className="cli-chip"
-                      type="button"
-                      onClick={() => {
-                        void loadColdShows(false)
-                      }}
-                      disabled={coldPagination.loading}
-                    >
-                      {coldPagination.loading ? 'Loading more…' : 'Load more cold shows'}
-                    </button>
-                  ) : (
-                    <span className="queue-sub">End of cold library</span>
+                <div className="pool-title">
+                  {pools?.cold?.path || 'Archive / HDD Pool'}
+                  {pools?.cold && (
+                    <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.9em' }}>
+                      • {formatBytesShort(pools.cold.free_bytes)} free / {formatBytesShort(pools.cold.total_bytes)} ({coldUsagePercent}% used)
+                    </span>
                   )}
                 </div>
-              )}
-            </section>
-
-            <section className="panel-base pool-panel" data-label="pool: hot">
-              <header className="panel-header">
-                <div className="panel-title-row">
-                  <div className="pool-tag">
-                    <span className="dot" style={{ background: 'var(--accent-hot)' }} />
-                    HOT
-                  </div>
-                  <div className="pool-title">
-                    {pools?.hot?.path || 'Now Playing / SSD Pool'}
-                    {pools?.hot && (
-                      <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.9em' }}>
-                        • {formatBytesShort(pools.hot.free_bytes)} free / {formatBytesShort(pools.hot.total_bytes)} ({hotUsagePercent}% used)
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="panel-header-tools">
+              </div>
+              <div className="panel-header-tools">
+                <div className="pool-meta">
                   <label className="search-input">
                     <span className="icon">⌕</span>
                     <input
                       type="text"
-                      placeholder="filter hot media…"
-                      aria-label="Filter hot media"
-                      value={hotSearchQuery}
-                      onChange={(e) => setHotSearchQuery(e.target.value)}
+                      placeholder="filter cold media…"
+                      aria-label="Filter cold media"
+                      value={coldSearchQuery}
+                      onChange={(e) => setColdSearchQuery(e.target.value)}
                     />
-                    {hotSearchQuery && (
+                    {coldSearchQuery && (
                       <button
                         type="button"
-                        onClick={() => setHotSearchQuery('')}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          padding: 0,
-                          fontSize: '0.9rem',
-                        }}
-                        aria-label="Clear search"
+                        onClick={() => setColdSearchQuery('')}
+                        className="search-clear-btn"
+                        aria-label="Clear cold media search"
                       >
                         ×
                       </button>
                     )}
                   </label>
                   <SortDropdown
-                    value={hotSortBy}
-                    direction={hotSortDir}
-                    onChange={setHotSortBy}
-                    onDirectionChange={setHotSortDir}
+                    value={coldSortBy}
+                    direction={coldSortDir}
+                    onChange={setColdSortBy}
+                    onDirectionChange={setColdSortDir}
                   />
                 </div>
-              </header>
-              <div className="media-list" id="hot-media-list">
-                {isLoadingShows && !hotMedia.length && <p className="queue-sub">Loading hot media…</p>}
-                {showsError && !hotMedia.length && <p className="queue-sub">{showsError}</p>}
-                {hotMedia.length > 0
-                  ? hotMedia.map((item, index) => renderMediaCard(item, index, 'hot'))
-                  : !isLoadingShows && !showsError && (
-                      <div className="queue-footer-line">
-                        <span>Hot pool is empty</span>
-                        <span>bring something from cold.</span>
-                      </div>
-                    )}
               </div>
-              {!isLoadingShows && hotMedia.length > 0 && !showsError && (
-                <div className="media-list-actions">
-                  {hotPagination.hasMore ? (
-                    <button
-                      className="cli-chip"
-                      type="button"
-                      onClick={() => {
-                        void loadHotShows(false)
-                      }}
-                      disabled={hotPagination.loading}
-                    >
-                      {hotPagination.loading ? 'Loading more…' : 'Load more hot shows'}
-                    </button>
-                  ) : (
-                    <span className="queue-sub">End of hot library</span>
+            </header>
+            <div className="media-list" id="cold-media-list">
+              {isLoadingShows && !coldMedia.length && <p className="queue-sub">Loading cold media…</p>}
+              {showsError && !coldMedia.length && <p className="queue-sub">{showsError}</p>}
+              {coldMedia.length > 0
+                ? coldMedia.map((item, index) => renderMediaCard(item, index, 'cold'))
+                : !isLoadingShows && !showsError && (
+                  <div className="queue-footer-line">
+                    <span>Cold pool is empty</span>
+                    <span>queue up a move.</span>
+                  </div>
+                )}
+            </div>
+            {!isLoadingShows && coldMedia.length > 0 && !showsError && (
+              <div className="media-list-actions">
+                {coldPagination.hasMore ? (
+                  <button
+                    className="cli-chip btn-animated"
+                    type="button"
+                    onClick={() => {
+                      void loadColdShows(false)
+                    }}
+                    disabled={coldPagination.loading}
+                  >
+                    {coldPagination.loading ? 'Loading more…' : 'Load more cold shows'}
+                  </button>
+                ) : (
+                  <span className="queue-sub">End of cold library</span>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="panel-base pool-panel" data-label="pool: hot">
+            <header className="panel-header">
+              <div className="panel-title-row">
+                <div className="pool-tag">
+                  <span className="dot" style={{ background: 'var(--accent-hot)' }} />
+                  HOT
+                </div>
+                <div className="pool-title">
+                  {pools?.hot?.path || 'Now Playing / SSD Pool'}
+                  {pools?.hot && (
+                    <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.9em' }}>
+                      • {formatBytesShort(pools.hot.free_bytes)} free / {formatBytesShort(pools.hot.total_bytes)} ({hotUsagePercent}% used)
+                    </span>
                   )}
                 </div>
-              )}
-            </section>
+              </div>
+              <div className="panel-header-tools">
+                <label className="search-input">
+                  <span className="icon">⌕</span>
+                  <input
+                    type="text"
+                    placeholder="filter hot media…"
+                    aria-label="Filter hot media"
+                    value={hotSearchQuery}
+                    onChange={(e) => setHotSearchQuery(e.target.value)}
+                  />
+                  {hotSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setHotSearchQuery('')}
+                      className="search-clear-btn"
+                      aria-label="Clear hot media search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </label>
+                <SortDropdown
+                  value={hotSortBy}
+                  direction={hotSortDir}
+                  onChange={setHotSortBy}
+                  onDirectionChange={setHotSortDir}
+                />
+              </div>
+            </header>
+            <div className="media-list" id="hot-media-list">
+              {isLoadingShows && !hotMedia.length && <p className="queue-sub">Loading hot media…</p>}
+              {showsError && !hotMedia.length && <p className="queue-sub">{showsError}</p>}
+              {hotMedia.length > 0
+                ? hotMedia.map((item, index) => renderMediaCard(item, index, 'hot'))
+                : !isLoadingShows && !showsError && (
+                  <div className="queue-footer-line">
+                    <span>Hot pool is empty</span>
+                    <span>bring something from cold.</span>
+                  </div>
+                )}
+            </div>
+            {!isLoadingShows && hotMedia.length > 0 && !showsError && (
+              <div className="media-list-actions">
+                {hotPagination.hasMore ? (
+                  <button
+                    className="cli-chip btn-animated"
+                    type="button"
+                    onClick={() => {
+                      void loadHotShows(false)
+                    }}
+                    disabled={hotPagination.loading}
+                  >
+                    {hotPagination.loading ? 'Loading more…' : 'Load more hot shows'}
+                  </button>
+                ) : (
+                  <span className="queue-sub">End of hot library</span>
+                )}
+              </div>
+            )}
+          </section>
 
-            <aside className="panel-base queue-panel" data-label="queue / stats">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <aside className="panel-base queue-panel" data-label="queue">
               <header className="panel-header">
                 <div className="queue-header-main">
                   <div>
@@ -706,9 +757,6 @@ const JellyMoverShell = () => {
                     <div className="queue-sub">media flowing between HOT / COLD</div>
                   </div>
                 </div>
-                <button className="cli-chip" type="button" onClick={() => navigate('/stats')}>
-                  view full stats →
-                </button>
               </header>
 
               <div className="queue-body">
@@ -716,8 +764,18 @@ const JellyMoverShell = () => {
                   {isLoadingJobs && !jobs.length && <div className="queue-sub">Loading jobs…</div>}
                   {jobsError && !jobs.length && <div className="queue-sub">{jobsError}</div>}
                   {jobs.length > 0
-                    ? jobs.slice(0, 6).map(renderQueueItem)
+                    ? jobs.map(renderQueueItem)
                     : !isLoadingJobs && !jobsError && <div className="queue-sub">queue is idle</div>}
+
+                  {analytics && jobs.length < analytics.total_jobs && (
+                    <button
+                      className="cli-chip btn-animated load-more-centered"
+                      type="button"
+                      onClick={() => setJobsLimit((prev) => prev + 10)}
+                    >
+                      Load more jobs…
+                    </button>
+                  )}
                 </div>
 
                 {moveError && <div className="queue-sub">{moveError}</div>}
@@ -727,7 +785,7 @@ const JellyMoverShell = () => {
                     <span>active transfers</span>
                     <span>
                       <strong id="queue-active-label">{queueActiveDisplay}</strong> /{' '}
-                      <span id="queue-total-label">{jobs.length}</span>
+                      <span id="queue-total-label">{totalJobsCount}</span>
                     </span>
                   </div>
                   <div className="queue-footer-line">
@@ -738,7 +796,19 @@ const JellyMoverShell = () => {
                   </div>
                   {jobsError && <div className="queue-sub">{jobsError}</div>}
                 </div>
+              </div>
+            </aside>
 
+            <aside className="panel-base stats-panel" data-label="stats">
+              <header className="panel-header">
+                <div className="queue-header-main">
+                  <div className="queue-title">System Stats</div>
+                </div>
+                <button className="cli-chip btn-animated" type="button" onClick={() => navigate('/stats')}>
+                  view full stats →
+                </button>
+              </header>
+              <div className="panel-body">
                 <div className="stats-mini">
                   {(
                     [
@@ -767,18 +837,19 @@ const JellyMoverShell = () => {
                 </div>
               </div>
             </aside>
-          </section>
-
-          <div className="footer-line">
-            <span>
-              &gt; hint: click a <span className="accent">MOVE</span> button to see queue animation
-            </span>
-            <span>
-              jellyfin integration: <span className="accent-hot">TODO</span> — wire backend / API calls here.
-            </span>
           </div>
-        </main>
-      </div>
+        </section>
+
+        <div className="footer-line">
+          <span>
+            &gt; hint: click a <span className="accent">MOVE</span> button to see queue animation
+          </span>
+          <span>
+            jellyfin integration: <span className="accent-hot">TODO</span> — wire backend / API calls here.
+          </span>
+        </div>
+      </main>
+    </div>
   )
 }
 

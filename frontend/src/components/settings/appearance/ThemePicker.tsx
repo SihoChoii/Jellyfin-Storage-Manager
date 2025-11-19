@@ -6,6 +6,7 @@
  */
 import React, { useCallback } from 'react';
 import { useTheme } from '../../../theme/context';
+import { getTheme } from '../../../theme/registry';
 import { ThemeCard } from './ThemeCard';
 import type { ThemeKey } from '../../../theme/types';
 
@@ -34,7 +35,7 @@ export const ThemePicker: React.FC<ThemePickerProps> = ({
           <ThemeCard
             key={themeMeta.key}
             meta={themeMeta}
-            theme={theme} // Pass the current theme for styling reference
+            theme={getTheme(themeMeta.key)} // Pass the specific theme for this card
             isActive={themeMeta.key === themeKey}
             onClick={() => handleThemeSelect(themeMeta.key)}
           />
