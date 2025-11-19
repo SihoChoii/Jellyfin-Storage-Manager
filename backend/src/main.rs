@@ -2,10 +2,12 @@ mod config;
 mod db;
 mod jellyfin;
 mod jobs;
+mod metrics_collector;
 mod paths;
 mod pools;
 mod scanner;
 mod system;
+mod user_settings;
 
 use std::{
     env,
@@ -13,6 +15,7 @@ use std::{
     path::{Path as StdPath, PathBuf},
     sync::Arc,
 };
+use tokio::fs;
 
 use axum::{
     Json, Router,
@@ -20,7 +23,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{Method, Request, StatusCode, header, HeaderValue},
     response::{Html, IntoResponse},
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -152,6 +155,39 @@ struct ShowsQuery {
 struct JobsQuery {
     limit: Option<u32>,
     offset: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct HistoryQuery {
+    duration: Option<String>,
+}
+
+#[derive(Serialize, FromRow)]
+struct SystemMetricsHistoryPoint {
+    timestamp: i64,
+    cpu_percent: f32,
+    memory_percent: f32,
+    memory_used_bytes: i64,
+    memory_total_bytes: i64,
+}
+
+#[derive(Serialize, FromRow)]
+struct PoolUsageHistoryPoint {
+    timestamp: i64,
+    pool_type: String,
+    total_bytes: i64,
+    used_bytes: i64,
+    free_bytes: i64,
+}
+
+#[derive(Serialize)]
+struct JobAnalytics {
+    total_jobs: i64,
+    running_count: i64,
+    queued_count: i64,
+    completed_count: i64,
+    failed_count: i64,
+    total_bytes_moved: i64,
 }
 
 #[derive(Serialize, FromRow)]
@@ -325,6 +361,13 @@ async fn main() {
     let worker_handle =
         jobs::start_worker(state.db.clone(), state.config.clone(), shutdown_rx.clone());
 
+    // Start metrics collector
+    let _metrics_handle = metrics_collector::start_collector(
+        state.db.clone(),
+        state.config.clone(),
+        state.system_monitor.clone(),
+    );
+
     // CORS configuration for TrueNAS SCALE deployments
     // Allows private IPs and localhost, rejects public origins
     let cors = CorsLayer::new()
@@ -343,17 +386,22 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/config", get(get_config).put(update_config))
+        .route("/api/me/settings", get(get_user_settings_handler).patch(update_user_settings_handler))
         .route("/api/paths", get(list_paths))
         .route("/api/pools", get(get_pools))
+        .route("/api/pools/history", get(get_pool_usage_history))
         .route("/api/stats", get(get_system_stats))
+        .route("/api/stats/history", get(get_system_stats_history))
         .route("/api/scan", post(trigger_scan))
         .route("/api/scan/status", get(get_scan_status))
         .route("/api/jellyfin/rescan", post(trigger_jellyfin_rescan))
         .route("/api/jellyfin/status", get(get_jellyfin_status))
         .route("/api/shows", get(list_shows))
+        .route("/api/shows/:id/thumbnail", get(get_show_thumbnail))
         .route("/api/shows/:id/move", post(create_move_job_handler))
         .route("/api/jobs", get(list_jobs_handler))
         .route("/api/jobs/:id", get(get_job_handler))
+        .route("/api/jobs/analytics", get(get_job_analytics))
         .with_state(state)
         .layer(cors)
         .fallback(static_fallback);
@@ -734,6 +782,75 @@ async fn list_shows(
     }
 }
 
+async fn get_show_thumbnail(
+    State(state): State<AppState>,
+    Path(show_id): Path<i64>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    // Query the database for the thumbnail path
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT thumbnail_path FROM shows WHERE id = ?"
+    )
+    .bind(show_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|err| {
+        error!(?err, show_id, "Failed to query thumbnail path");
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+    })?;
+
+    let thumbnail_path = match row.and_then(|(path,)| path) {
+        Some(path) => path,
+        None => return Err(error_response(StatusCode::NOT_FOUND, "Thumbnail not found")),
+    };
+
+    // Validate the path is within allowed directories (security)
+    let config = state.config.read().await;
+    let path_buf = PathBuf::from(&thumbnail_path);
+
+    let is_allowed = path_buf.starts_with(&config.hot_root)
+        || path_buf.starts_with(&config.cold_root)
+        || config.library_paths.iter().any(|lib_path| path_buf.starts_with(lib_path));
+
+    if !is_allowed {
+        warn!(path = %thumbnail_path, "Attempted access to thumbnail outside allowed directories");
+        return Err(error_response(StatusCode::FORBIDDEN, "Access denied"));
+    }
+
+    // Check if file exists
+    if !path_buf.exists() {
+        return Err(error_response(StatusCode::NOT_FOUND, "Thumbnail file not found"));
+    }
+
+    // Read the file
+    let image_bytes = fs::read(&path_buf).await.map_err(|err| {
+        error!(?err, path = %thumbnail_path, "Failed to read thumbnail file");
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to read thumbnail")
+    })?;
+
+    // Determine content-type from file extension
+    let content_type = path_buf
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .and_then(|ext| match ext.to_lowercase().as_str() {
+            "jpg" | "jpeg" => Some("image/jpeg"),
+            "png" => Some("image/png"),
+            "gif" => Some("image/gif"),
+            "webp" => Some("image/webp"),
+            _ => Some("image/jpeg"), // default to jpeg
+        })
+        .unwrap_or("image/jpeg");
+
+    // Return the image with appropriate headers
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        image_bytes,
+    ))
+}
+
 async fn create_move_job_handler(
     State(state): State<AppState>,
     Path(show_id): Path<i64>,
@@ -794,6 +911,183 @@ async fn get_job_handler(
             Err(error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to fetch job",
+            ))
+        }
+    }
+}
+
+async fn get_system_stats_history(
+    State(state): State<AppState>,
+    Query(query): Query<HistoryQuery>,
+) -> Result<Json<Vec<SystemMetricsHistoryPoint>>, (StatusCode, Json<ErrorResponse>)> {
+    let seconds_ago = parse_duration(&query.duration);
+    let cutoff_timestamp = Utc::now().timestamp() - seconds_ago;
+
+    let rows = sqlx::query_as::<_, SystemMetricsHistoryPoint>(
+        r#"
+        SELECT timestamp, cpu_percent, memory_percent, memory_used_bytes, memory_total_bytes
+        FROM system_metrics_history
+        WHERE timestamp >= ?
+        ORDER BY timestamp ASC
+        "#,
+    )
+    .bind(cutoff_timestamp)
+    .fetch_all(&state.db)
+    .await;
+
+    match rows {
+        Ok(data) => Ok(Json(data)),
+        Err(err) => {
+            error!(?err, "Failed to fetch system metrics history");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch metrics history",
+            ))
+        }
+    }
+}
+
+async fn get_pool_usage_history(
+    State(state): State<AppState>,
+    Query(query): Query<HistoryQuery>,
+) -> Result<Json<Vec<PoolUsageHistoryPoint>>, (StatusCode, Json<ErrorResponse>)> {
+    let seconds_ago = parse_duration(&query.duration);
+    let cutoff_timestamp = Utc::now().timestamp() - seconds_ago;
+
+    let rows = sqlx::query_as::<_, PoolUsageHistoryPoint>(
+        r#"
+        SELECT timestamp, pool_type, total_bytes, used_bytes, free_bytes
+        FROM pool_usage_history
+        WHERE timestamp >= ?
+        ORDER BY pool_type, timestamp ASC
+        "#,
+    )
+    .bind(cutoff_timestamp)
+    .fetch_all(&state.db)
+    .await;
+
+    match rows {
+        Ok(data) => Ok(Json(data)),
+        Err(err) => {
+            error!(?err, "Failed to fetch pool usage history");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch pool usage history",
+            ))
+        }
+    }
+}
+
+async fn get_job_analytics(
+    State(state): State<AppState>,
+) -> Result<Json<JobAnalytics>, (StatusCode, Json<ErrorResponse>)> {
+    // Get job counts by status
+    let counts = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT status, COUNT(*) as count
+        FROM jobs
+        GROUP BY status
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await;
+
+    // Calculate total bytes moved from completed jobs
+    let total_bytes: Option<i64> = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(SUM(total_bytes), 0)
+        FROM jobs
+        WHERE status = 'success'
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(Some(0));
+
+    match counts {
+        Ok(status_counts) => {
+            let mut analytics = JobAnalytics {
+                total_jobs: 0,
+                running_count: 0,
+                queued_count: 0,
+                completed_count: 0,
+                failed_count: 0,
+                total_bytes_moved: total_bytes.unwrap_or(0),
+            };
+
+            for (status, count) in status_counts {
+                analytics.total_jobs += count;
+                match status.as_str() {
+                    "running" => analytics.running_count = count,
+                    "queued" => analytics.queued_count = count,
+                    "success" => analytics.completed_count = count,
+                    "failed" => analytics.failed_count = count,
+                    _ => {}
+                }
+            }
+
+            Ok(Json(analytics))
+        }
+        Err(err) => {
+            error!(?err, "Failed to fetch job analytics");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch job analytics",
+            ))
+        }
+    }
+}
+
+fn parse_duration(duration: &Option<String>) -> i64 {
+    match duration.as_deref() {
+        Some("1h") => 3600,
+        Some("6h") => 6 * 3600,
+        Some("24h") => 24 * 3600,
+        Some("7d") => 7 * 24 * 3600,
+        Some("30d") => 30 * 24 * 3600,
+        _ => 3600, // Default to 1 hour
+    }
+}
+
+// User settings handlers
+async fn get_user_settings_handler(
+    State(state): State<AppState>,
+) -> Result<Json<user_settings::UserSettings>, (StatusCode, Json<ErrorResponse>)> {
+    match user_settings::get_settings(&state.db).await {
+        Ok(settings) => Ok(Json(settings)),
+        Err(err) => {
+            error!(?err, "Failed to get user settings");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get user settings",
+            ))
+        }
+    }
+}
+
+async fn update_user_settings_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<user_settings::UserSettings>,
+) -> Result<Json<user_settings::UserSettings>, (StatusCode, Json<ErrorResponse>)> {
+    // Validate theme
+    if !user_settings::is_valid_theme(&payload.theme) {
+        return Err(error_response_with_details(
+            StatusCode::BAD_REQUEST,
+            "Invalid theme",
+            format!(
+                "Theme '{}' is not valid. Valid themes: jelly, light, dark",
+                payload.theme
+            ),
+        ));
+    }
+
+    match user_settings::update_settings(&state.db, &payload).await {
+        Ok(_) => Ok(Json(payload)),
+        Err(err) => {
+            error!(?err, "Failed to update user settings");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to update user settings",
             ))
         }
     }

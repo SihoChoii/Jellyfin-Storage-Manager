@@ -1,3 +1,4 @@
+![Banner](Example/banner1.png)
 # JellyMover
 
 JellyMover keeps a Jellyfin library balanced across a fast “hot” SSD pool and a larger “cold” HDD pool. A Rust backend continuously understands what lives where, a SQLite database tracks shows and move jobs, and a React/Vite frontend gives you a control surface for scans, pool insights, and one-click moves.

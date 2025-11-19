@@ -10,6 +10,10 @@ export interface AppConfig {
   jellyfin: JellyfinSettings
 }
 
+export interface UserSettings {
+  theme: string
+}
+
 export interface PathEntry {
   name: string
   full_path: string
@@ -79,3 +83,30 @@ export interface SystemStats {
 
 export type SortField = 'title' | 'size' | 'date' | 'seasons' | 'episodes'
 export type SortDirection = 'asc' | 'desc'
+
+export interface SystemMetricsHistoryPoint {
+  timestamp: number
+  cpu_percent: number
+  memory_percent: number
+  memory_used_bytes: number
+  memory_total_bytes: number
+}
+
+export interface PoolUsageHistoryPoint {
+  timestamp: number
+  pool_type: string
+  total_bytes: number
+  used_bytes: number
+  free_bytes: number
+}
+
+export interface JobAnalytics {
+  total_jobs: number
+  running_count: number
+  queued_count: number
+  completed_count: number
+  failed_count: number
+  total_bytes_moved: number
+}
+
+export type DurationOption = '1h' | '6h' | '24h' | '7d' | '30d'

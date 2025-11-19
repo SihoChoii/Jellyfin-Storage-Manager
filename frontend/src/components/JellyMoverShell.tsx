@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../api'
-import type { PoolsResponse, Show, SortDirection, SortField, SystemStats } from '../types'
+import type { PoolsResponse, Show, SortDirection, SortField, SystemStats, ScanStatus } from '../types'
 import type { Job } from '../types'
 import AppHeader from './AppHeader'
 import {
+  formatBytesShort,
   formatEta,
   formatJobDirection,
   formatJobId,
@@ -36,6 +37,23 @@ const initialStats: StatsState = {
 
 const SHOWS_PAGE_SIZE = 50
 
+const formatRelativeTime = (timestamp: number | null) => {
+  if (!timestamp) return null
+  const now = Date.now()
+  const delta = now - timestamp * 1000
+  if (delta < 0) {
+    return new Date(timestamp * 1000).toLocaleString()
+  }
+  const minutes = Math.floor(delta / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(timestamp * 1000).toLocaleDateString()
+}
+
 interface ShowPaginationState {
   offset: number
   hasMore: boolean
@@ -65,6 +83,8 @@ const JellyMoverShell = () => {
   const [movingShowIds, setMovingShowIds] = useState<Set<number>>(() => new Set())
   const [moveError, setMoveError] = useState<string | null>(null)
   const [stats, setStats] = useState<StatsState>(initialStats)
+  const [isScanRunning, setIsScanRunning] = useState(false)
+  const [lastScanFinishedAt, setLastScanFinishedAt] = useState<number | null>(null)
 
   // Search and sort state
   const [hotSearchQuery, setHotSearchQuery] = useState('')
@@ -79,6 +99,7 @@ const JellyMoverShell = () => {
   const debouncedColdSearch = useDebounce(coldSearchQuery, 300)
 
   const jobStatusMapRef = useRef<Map<number, string>>(new Map())
+  const scanStatusRef = useRef<ScanStatus | null>(null)
 
   const isMountedRef = useRef(true)
   useEffect(() => {
@@ -86,6 +107,7 @@ const JellyMoverShell = () => {
       isMountedRef.current = false
     }
   }, [])
+
 
   const fetchShowsPage = useCallback(
     async (
@@ -196,6 +218,43 @@ const JellyMoverShell = () => {
   // Initial load
   useEffect(() => {
     reloadShows()
+  }, [reloadShows])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const pollScanStatus = async () => {
+      try {
+        const status = await apiGet<ScanStatus>('/scan/status')
+        if (cancelled) return
+        const previous = scanStatusRef.current
+        scanStatusRef.current = status
+        setIsScanRunning(status.state === 'Running')
+        setLastScanFinishedAt(status.last_finished ?? null)
+
+        if (previous) {
+          const prevFinished = previous.last_finished ?? null
+          const finishedChanged =
+            status.state === 'Idle' && typeof status.last_finished === 'number' && status.last_finished !== prevFinished
+          const transitionedToIdle = previous.state === 'Running' && status.state === 'Idle'
+          if (transitionedToIdle || finishedChanged) {
+            reloadShows()
+          }
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.error('Failed to poll scan status', err)
+        }
+      }
+    }
+
+    pollScanStatus()
+    const interval = window.setInterval(pollScanStatus, 5000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
   }, [reloadShows])
 
   // Reload hot shows when search or sort changes
@@ -365,10 +424,10 @@ const JellyMoverShell = () => {
     const tag = deriveShowTag(media)
     const displayTitle = media.title?.trim() || 'Untitled show'
     const isBusy = movingShowIds.has(media.id) || busyShowIds.has(media.id)
-    const thumbnailPath = media.thumbnail_path?.trim()
-    const thumbStyle = thumbnailPath
+    const hasThumbnail = media.thumbnail_path?.trim()
+    const thumbStyle = hasThumbnail
       ? {
-          backgroundImage: `url(${thumbnailPath})`,
+          backgroundImage: `url(/api/shows/${media.id}/thumbnail)`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }
@@ -453,6 +512,17 @@ const JellyMoverShell = () => {
             <span className="tiny-pill">
               transport: <strong>ssd ↔ hdd</strong>
             </span>
+            <span
+              className={`tiny-pill tiny-pill-status ${isScanRunning ? 'tiny-pill-status--running' : ''}`.trim()}
+            >
+              <span className="status-dot" aria-hidden="true" />
+              scan: <strong>{isScanRunning ? 'running' : 'idle'}</strong>
+              {!isScanRunning && (
+                <span className="tiny-pill-status-time">
+                  {lastScanFinishedAt ? `last run ${formatRelativeTime(lastScanFinishedAt)}` : 'no scans yet'}
+                </span>
+              )}
+            </span>
           </div>
         </div>
 
@@ -465,7 +535,14 @@ const JellyMoverShell = () => {
                     <span className="dot" />
                     COLD
                   </div>
-                  <div className="pool-title">Archive / HDD Pool</div>
+                  <div className="pool-title">
+                    {pools?.cold?.path || 'Archive / HDD Pool'}
+                    {pools?.cold && (
+                      <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.9em' }}>
+                        • {formatBytesShort(pools.cold.free_bytes)} free / {formatBytesShort(pools.cold.total_bytes)} ({coldUsagePercent}% used)
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="panel-header-tools">
                   <div className="pool-meta">
@@ -544,7 +621,14 @@ const JellyMoverShell = () => {
                     <span className="dot" style={{ background: 'var(--accent-hot)' }} />
                     HOT
                   </div>
-                  <div className="pool-title">Now Playing / SSD Pool</div>
+                  <div className="pool-title">
+                    {pools?.hot?.path || 'Now Playing / SSD Pool'}
+                    {pools?.hot && (
+                      <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.9em' }}>
+                        • {formatBytesShort(pools.hot.free_bytes)} free / {formatBytesShort(pools.hot.total_bytes)} ({hotUsagePercent}% used)
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="panel-header-tools">
                   <label className="search-input">

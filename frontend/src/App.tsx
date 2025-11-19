@@ -7,6 +7,7 @@ import LibraryPage from './pages/LibraryPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
 import StatsPage from './pages/StatsPage.tsx'
 import type { AppConfig } from './types.ts'
+import { useTheme } from './theme'
 
 const needsConfigSetup = (config: AppConfig | null) => {
   if (!config) return true
@@ -28,6 +29,17 @@ function AppLayout() {
 }
 
 function App() {
+  const { themeKey, theme, isDarkMode } = useTheme()
+
+  // Debug theme in development only
+  if (import.meta.env.DEV) {
+    console.log('[ThemeProvider] Active theme:', {
+      key: themeKey,
+      name: theme.meta.name,
+      isDark: isDarkMode,
+    })
+  }
+
   const [configLoading, setConfigLoading] = useState(true)
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [needsSetup, setNeedsSetup] = useState(false)

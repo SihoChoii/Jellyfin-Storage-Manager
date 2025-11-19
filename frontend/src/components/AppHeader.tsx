@@ -1,5 +1,6 @@
 import type { PropsWithChildren, ReactNode } from 'react'
 import PrimaryNav from './PrimaryNav'
+import { useTheme } from '../theme'
 
 interface AppHeaderProps extends PropsWithChildren {
   subtitle?: ReactNode
@@ -8,6 +9,9 @@ interface AppHeaderProps extends PropsWithChildren {
 const defaultSubtitle = '> orchestrate hot / cold media pools like a CLI — but pretty.'
 
 const AppHeader = ({ subtitle = defaultSubtitle, children }: AppHeaderProps) => {
+  const { theme } = useTheme()
+  const tagline = theme.meta.logoTagline
+
   return (
     <header className="top-bar">
       <div className="top-left">
@@ -19,7 +23,7 @@ const AppHeader = ({ subtitle = defaultSubtitle, children }: AppHeaderProps) => 
         <div className="logo-block">
           <div className="logo-main">
             <span>JELLYMOVER</span>
-            <span>FIRE ∧ ICE</span>
+            {tagline && <span>{tagline}</span>}
           </div>
           <div className="logo-sub">{subtitle}</div>
         </div>

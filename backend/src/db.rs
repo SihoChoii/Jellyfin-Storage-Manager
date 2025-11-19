@@ -88,6 +88,52 @@ async fn apply_schema(pool: &DbPool) -> Result<(), sqlx::Error> {
 
     create_indexes(pool).await?;
 
+    // Time-series tables for historical metrics
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS system_metrics_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            cpu_percent REAL NOT NULL,
+            memory_percent REAL NOT NULL,
+            memory_used_bytes INTEGER NOT NULL,
+            memory_total_bytes INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS pool_usage_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            pool_type TEXT NOT NULL,
+            total_bytes INTEGER NOT NULL,
+            used_bytes INTEGER NOT NULL,
+            free_bytes INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    create_history_indexes(pool).await?;
+
+    // User settings table (single-row for user preferences)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            theme TEXT NOT NULL DEFAULT 'jelly',
+            updated_at INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
@@ -183,6 +229,21 @@ async fn create_indexes(pool: &DbPool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_shows_location_date ON shows(location, last_scan);")
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+async fn create_history_indexes(pool: &DbPool) -> Result<(), sqlx::Error> {
+    // Indexes for efficient time-based queries on historical metrics
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_system_metrics_timestamp ON system_metrics_history(timestamp);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pool_usage_timestamp ON pool_usage_history(timestamp);")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pool_usage_type_timestamp ON pool_usage_history(pool_type, timestamp);")
         .execute(pool)
         .await?;
 

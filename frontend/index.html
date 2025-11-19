@@ -1,9 +1,31 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="jelly">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Phase 4.4: Prevent flash of unstyled content on theme load -->
+    <script>
+      (function() {
+        try {
+          const storedTheme = localStorage.getItem('jellymover-theme') || 'jelly';
+          document.documentElement.setAttribute('data-theme', storedTheme);
+        } catch (e) {
+          // localStorage might be unavailable (privacy mode, etc.)
+          console.warn('Unable to read theme from localStorage:', e);
+        }
+      })();
+    </script>
+
+    <!-- Google Fonts: Inter and JetBrains Mono for Light theme -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
     <title>frontend</title>
   </head>
   <body>
